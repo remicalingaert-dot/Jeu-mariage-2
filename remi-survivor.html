@@ -38,16 +38,29 @@
   }
   #nameOk:active{transform:translate(2px,2px);box-shadow:1px 1px 0 rgba(0,0,0,.5)}
   #nameOk:focus-visible,#nameInput:focus-visible{outline:2px solid #ffd23f;outline-offset:2px}
+
+  #retour{
+    position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:20;
+    display:none;align-items:center;gap:6px;
+    padding:7px 12px;background:rgba(11,9,16,.82);border:2px solid #8fc45a;
+    color:#8fc45a;text-decoration:none;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  }
+  #retour.on{display:flex}
+  #retour:active{transform:translate(1px,1px)}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<a id="retour" href="index.html">&lt; Rediaverse</a>
 <div id="nameBox">
   <p id="nameTitle">Tu entres dans le top 5</p>
   <p id="nameSub">Choisis ton pseudo</p>
   <input id="nameInput" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Pseudo">
   <button id="nameOk">Valider</button>
 </div>
+<script src="leaderboard.js"></script>
 <script>
 'use strict';
 
@@ -65,7 +78,7 @@ const CONFIG = {
   PV_MAX: 100,
   VITESSE: 62,
   DEGATS_CONTACT: 10,
-  INVULN: 0.7,             // sans ça, cinq orcs collés tuent en une image
+  INVULN: 1.7,             // 0,7 s de base + 1 s ajoutee
 
   // --- Expérience ---
   XP_BASE: 10,             // niveau 1 -> 2
@@ -87,7 +100,8 @@ const CONFIG = {
   ELITE_DEPUIS: 3,         // première manche où ils apparaissent
   ELITE_PV: 5,             // multiplicateur de résistance
   ELITE_TAILLE: 1.3,
-  ELITE_XP: 10,            // rapporte 10 fois plus qu'un orc classique
+  XP_PAR_ORC: 2,           // experience d'un orc classique
+  ELITE_XP: 20,            // une elite en rapporte 10 fois plus
   ELITE_CHANCE: 0.08,      // proportion des apparitions à la manche 3
   ELITE_CHANCE_PAR_MANCHE: 0.012,
   ELITE_CHANCE_MAX: 0.20,
@@ -392,15 +406,15 @@ const HUD_H = 46;   // bandeau réservé en haut
 function buildArene() {
   const top = hudTop + HUD_H;
 
-  // Murs : haies et muret de pierre, disposés pour créer des couloirs
+  // Murs : la butte du hobbit, des haies et des barrières de bois
   const W = VW, H = VH;
   murs = [
-    { x: 26, y: top + 46, w: 62, h: 12, type: 'haie' },
-    { x: W - 92, y: top + 92, w: 70, h: 12, type: 'haie' },
-    { x: 40, y: H * 0.52, w: 12, h: 68, type: 'pierre' },
-    { x: W - 56, y: H * 0.46, w: 12, h: 74, type: 'pierre' },
+    { x: W / 2 - 48, y: top + 48, w: 96, h: 30, type: 'maison' },
+    { x: W - 92, y: top + 112, w: 70, h: 12, type: 'haie' },
+    { x: 40, y: H * 0.52, w: 12, h: 68, type: 'bois' },
+    { x: W - 56, y: H * 0.46, w: 12, h: 74, type: 'bois' },
     { x: W / 2 - 34, y: H * 0.70, w: 68, h: 12, type: 'haie' },
-    { x: 24, y: H - 92, w: 54, h: 12, type: 'pierre' },
+    { x: 24, y: H - 92, w: 54, h: 12, type: 'bois' },
     { x: W - 78, y: H - 74, w: 54, h: 12, type: 'haie' },
   ].map(m => ({ ...m, x: Math.round(m.x), y: Math.round(m.y) }));
 
@@ -450,21 +464,104 @@ function buildArene() {
   }
 }
 
-function drawMur(g, m) {
-  if (m.type === 'haie') {
-    g.fillStyle = '#2f5c2a'; g.fillRect(m.x, m.y, m.w, m.h);
-    g.fillStyle = '#4a8a3c'; g.fillRect(m.x, m.y, m.w, m.h - 4);
-    g.fillStyle = '#63a84c'; g.fillRect(m.x, m.y, m.w, 3);
-    g.fillStyle = 'rgba(0,0,0,0.18)';
-    for (let x = m.x + 2; x < m.x + m.w - 1; x += 5) g.fillRect(x, m.y + 4, 1, m.h - 6);
-  } else {
-    g.fillStyle = '#5c5750'; g.fillRect(m.x, m.y, m.w, m.h);
-    g.fillStyle = '#837c71'; g.fillRect(m.x, m.y, m.w, m.h - 3);
-    g.fillStyle = '#9d968a'; g.fillRect(m.x, m.y, m.w, 2);
-    g.fillStyle = 'rgba(0,0,0,0.22)';
-    for (let y = m.y + 3; y < m.y + m.h - 1; y += 4)
-      for (let x = m.x + ((y / 4) % 2 ? 2 : 5); x < m.x + m.w - 1; x += 7) g.fillRect(x, y, 1, 3);
+function drawMaison(g, m) {
+  const cx = m.x + m.w / 2, base = m.y + m.h;
+
+  // L'arbre d'abord : la butte viendra masquer le pied du tronc
+  const tx = cx + 5, ty = m.y - 24;
+  g.fillStyle = '#4a3524';
+  g.fillRect(Math.round(tx - 2), Math.round(ty), 4, 34);
+  g.fillRect(Math.round(tx - 7), Math.round(ty + 7), 5, 2);
+  g.fillRect(Math.round(tx + 2), Math.round(ty + 3), 6, 2);
+  const feuillage = [[0, -8, 15], [-13, -3, 11], [13, -4, 11], [-6, -16, 10], [8, -15, 10]];
+  g.fillStyle = '#28582a';
+  for (const [dx, dy, r] of feuillage) { g.beginPath(); g.arc(tx + dx, ty + dy, r, 0, 7); g.fill(); }
+  g.fillStyle = '#3d8039';
+  for (const [dx, dy, r] of feuillage) { g.beginPath(); g.arc(tx + dx - 2, ty + dy - 3, r * 0.68, 0, 7); g.fill(); }
+
+  // La butte, en trois couches de vert
+  g.fillStyle = '#3f6b2c';
+  g.beginPath(); g.ellipse(cx, base, m.w / 2 + 9, 38, 0, Math.PI, 0); g.fill();
+  g.fillStyle = '#4e7a33';
+  g.beginPath(); g.ellipse(cx, base, m.w / 2 + 4, 32, 0, Math.PI, 0); g.fill();
+  g.fillStyle = '#639543';
+  g.beginPath(); g.ellipse(cx, base - 1, m.w / 2 - 8, 22, 0, Math.PI, 0); g.fill();
+
+  // Fenêtres rondes
+  for (const ox of [-32, 32]) {
+    g.fillStyle = '#7d5230'; g.beginPath(); g.arc(cx + ox, base - 17, 8, 0, 7); g.fill();
+    g.fillStyle = '#f2e3a6'; g.beginPath(); g.arc(cx + ox, base - 17, 6, 0, 7); g.fill();
+    g.fillStyle = '#7d5230';
+    g.fillRect(Math.round(cx + ox - 6), Math.round(base - 18), 12, 1);
+    g.fillRect(Math.round(cx + ox), Math.round(base - 23), 1, 12);
   }
+
+  // La porte ronde, avec son encadrement de brique
+  const dy = base - 14;
+  g.fillStyle = '#8a5230'; g.beginPath(); g.arc(cx, dy, 16, 0, 7); g.fill();
+  g.fillStyle = '#b5764a'; g.beginPath(); g.arc(cx, dy, 14, 0, 7); g.fill();
+  g.fillStyle = '#6f4326';
+  for (let a = Math.PI; a <= Math.PI * 2 + 0.1; a += 0.42) {
+    g.fillRect(Math.round(cx + Math.cos(a) * 15 - 1), Math.round(dy + Math.sin(a) * 15 - 1), 2, 2);
+  }
+  g.fillStyle = '#2e7a3c'; g.beginPath(); g.arc(cx, dy, 11, 0, 7); g.fill();
+  g.fillStyle = '#25652f';
+  g.fillRect(Math.round(cx - 11), Math.round(dy - 1), 22, 1);
+  g.fillRect(Math.round(cx - 1), Math.round(dy - 11), 1, 22);
+  g.fillStyle = '#e8c65e'; g.fillRect(Math.round(cx + 5), Math.round(dy), 2, 2);
+
+  // Massif de fleurs au pied de la butte
+  const teintes = ['#f5e05c', '#f2f2ee', '#e88fb0', '#e0873f'];
+  for (let i = 0; i < 16; i++) {
+    const fx = cx - m.w / 2 - 4 + (i * 7) % (m.w + 8);
+    const fy = base - 2 - ((i * 5) % 6);
+    g.fillStyle = '#3f6b2c'; g.fillRect(Math.round(fx), Math.round(fy + 2), 1, 2);
+    g.fillStyle = teintes[i % teintes.length];
+    g.fillRect(Math.round(fx), Math.round(fy), 2, 2);
+  }
+}
+
+function drawBarriere(g, m) {
+  const bois = '#a8813f', clair = '#c19a55', sombre = '#7a5a2a', trait = '#3a2718';
+  if (m.w >= m.h) {
+    // Barrière horizontale : poteaux verticaux, deux lisses
+    g.fillStyle = sombre; g.fillRect(m.x, m.y + m.h - 2, m.w, 2);
+    g.fillStyle = bois;
+    g.fillRect(m.x, m.y + 2, m.w, 3);
+    g.fillRect(m.x, m.y + 7, m.w, 3);
+    g.fillStyle = clair;
+    g.fillRect(m.x, m.y + 2, m.w, 1);
+    g.fillRect(m.x, m.y + 7, m.w, 1);
+    for (let x = m.x + 1; x < m.x + m.w - 2; x += 13) {
+      g.fillStyle = trait; g.fillRect(x, m.y, 4, m.h);
+      g.fillStyle = bois; g.fillRect(x, m.y, 3, m.h - 1);
+      g.fillStyle = clair; g.fillRect(x, m.y, 1, m.h - 1);
+    }
+  } else {
+    // Barrière verticale
+    g.fillStyle = sombre; g.fillRect(m.x + m.w - 2, m.y, 2, m.h);
+    g.fillStyle = bois;
+    g.fillRect(m.x + 2, m.y, 3, m.h);
+    g.fillRect(m.x + 7, m.y, 3, m.h);
+    g.fillStyle = clair;
+    g.fillRect(m.x + 2, m.y, 1, m.h);
+    g.fillRect(m.x + 7, m.y, 1, m.h);
+    for (let y = m.y + 1; y < m.y + m.h - 2; y += 13) {
+      g.fillStyle = trait; g.fillRect(m.x, y, m.w, 4);
+      g.fillStyle = bois; g.fillRect(m.x, y, m.w - 1, 3);
+      g.fillStyle = clair; g.fillRect(m.x, y, m.w - 1, 1);
+    }
+  }
+}
+
+function drawMur(g, m) {
+  if (m.type === 'maison') { drawMaison(g, m); return; }
+  if (m.type === 'bois') { drawBarriere(g, m); return; }
+  g.fillStyle = '#2f5c2a'; g.fillRect(m.x, m.y, m.w, m.h);
+  g.fillStyle = '#4a8a3c'; g.fillRect(m.x, m.y, m.w, m.h - 4);
+  g.fillStyle = '#63a84c'; g.fillRect(m.x, m.y, m.w, 3);
+  g.fillStyle = 'rgba(0,0,0,0.18)';
+  for (let x = m.x + 2; x < m.x + m.w - 1; x += 5) g.fillRect(x, m.y + 4, 1, m.h - 6);
 }
 
 /* --- Collision cercle / rectangle --- */
@@ -541,13 +638,35 @@ const RARETES = {
 const POUVOIRS = {
   arc: {
     nom: 'Arc de la Foret Noire', rarete: 'commun', arme: true,
-    desc: 'Tire une fleche droit devant Remi et transperce ceux alignes derriere',
+    desc: 'Vise seul l orc le plus proche. Traverse au niveau 2, revient en boomerang au niveau 3',
     niveaux: [
-      { delai: 1.00, nb: 1, degats: 4, perce: 0, ecart: 0 },
-      { delai: 0.85, nb: 1, degats: 5, perce: 1, ecart: 0 },
-      { delai: 0.72, nb: 2, degats: 5, perce: 1, ecart: 0.16 },
-      { delai: 0.60, nb: 2, degats: 7, perce: 2, ecart: 0.16 },
-      { delai: 0.48, nb: 3, degats: 9, perce: 3, ecart: 0.22 },
+      { delai: 1.10, nb: 1, degats: 5, perce: 0, retour: false, ecart: 0 },
+      { delai: 0.95, nb: 1, degats: 6, perce: 2, retour: false, ecart: 0 },
+      { delai: 0.85, nb: 1, degats: 7, perce: 3, retour: true, ecart: 0 },
+      { delai: 0.75, nb: 2, degats: 9, perce: 3, retour: true, ecart: 0.20 },
+      { delai: 0.65, nb: 2, degats: 12, perce: 4, retour: true, ecart: 0.24 },
+    ],
+  },
+  fendoir: {
+    nom: 'Hache de bucheron', rarete: 'commun', arme: true,
+    desc: 'Un coup devant Remi, puis un coup dans son dos dans la foulee',
+    niveaux: [
+      { delai: 1.10, degats: 5, rayon: 30, ouverture: 1.20, retard: 0.24 },
+      { delai: 0.95, degats: 7, rayon: 33, ouverture: 1.25, retard: 0.22 },
+      { delai: 0.82, degats: 9, rayon: 36, ouverture: 1.30, retard: 0.20 },
+      { delai: 0.70, degats: 12, rayon: 40, ouverture: 1.40, retard: 0.18 },
+      { delai: 0.58, degats: 16, rayon: 46, ouverture: 1.55, retard: 0.16 },
+    ],
+  },
+  cri: {
+    nom: 'Cri du Nazgul', rarete: 'rare', arme: true,
+    desc: 'Un hurlement glacant : les orcs alentour prennent la fuite',
+    niveaux: [
+      { delai: 2.0, rayon: 55, duree: 0.8 },
+      { delai: 2.0, rayon: 70, duree: 0.9 },
+      { delai: 2.0, rayon: 85, duree: 1.0 },
+      { delai: 2.0, rayon: 100, duree: 1.1 },
+      { delai: 2.0, rayon: 120, duree: 1.2 },
     ],
   },
   haches: {
@@ -628,6 +747,7 @@ const POUVOIRS = {
 };
 
 const MAX_NIVEAU_POUVOIR = 5;
+const REPOS_PEUR = 0.9;   // secondes de sang-froid entre deux paniques
 
 function niveauDe(cle) { return jeu.pouvoirs[cle] || 0; }
 function statsDe(cle) {
@@ -684,7 +804,8 @@ const jeu = {
   tues: 0,
   pouvoirs: {},
   orcs: [], projectiles: [], haches: [], effets: [], particules: [], flotteurs: [],
-  cartes: [], secousse: 0, flash: 0, volCumul: 0,
+  cartes: [], carteChoisie: null, boutonValider: null,
+  secousse: 0, flash: 0, volCumul: 0, differes: [],
   minuteurs: {},
   attenteNom: false, monRang: -1, finCooldown: 0,
 };
@@ -703,7 +824,8 @@ function reset() {
   jeu.manche = 1; jeu.tues = 0; jeu.banniere = 0;
   jeu.pouvoirs = {};
   jeu.orcs = []; jeu.projectiles = []; jeu.haches = []; jeu.effets = []; jeu.particules = []; jeu.flotteurs = [];
-  jeu.cartes = []; jeu.secousse = 0; jeu.flash = 0; jeu.volCumul = 0;
+  jeu.cartes = []; jeu.carteChoisie = null; jeu.boutonValider = null;
+  jeu.secousse = 0; jeu.flash = 0; jeu.volCumul = 0; jeu.differes = [];
   jeu.minuteurs = {};
   jeu.attenteNom = false; jeu.monRang = -1; jeu.finCooldown = 0;
 
@@ -754,9 +876,9 @@ function apparaitreOrc() {
     r: elite ? 8 : 6,
     pv, pvMax: pv,
     elite,
-    xp: elite ? CONFIG.ELITE_XP : 1,
+    xp: elite ? CONFIG.ELITE_XP : CONFIG.XP_PAR_ORC,
     v: CONFIG.ORC_VITESSE * rnd(0.85, 1.15) * (elite ? 0.9 : 1),
-    dir: 1, anim: rnd(0, 6), flash: 0, cdHache: {},
+    dir: 1, anim: rnd(0, 6), flash: 0, peur: 0, immuPeur: 0, cdHache: {},
   });
 }
 
@@ -783,8 +905,10 @@ function onDown(e) {
     reset(); jeu.etat = 'jeu'; return;
   }
   if (jeu.etat === 'niveau') {
+    const b = jeu.boutonValider;
+    if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { validerCarte(); return; }
     const c = jeu.cartes.find(k => p.x >= k.x && p.x <= k.x + k.w && p.y >= k.y && p.y <= k.y + k.h);
-    if (c) choisirCarte(c.cle);
+    if (c) selectionnerCarte(c.cle);
     return;
   }
   // En jeu : le joystick naît sous le doigt
@@ -823,7 +947,8 @@ window.addEventListener('keydown', e => {
   else if (jeu.etat === 'fin' && !jeu.attenteNom && jeu.finCooldown <= 0 && (e.code === 'Space' || e.code === 'Enter')) { reset(); jeu.etat = 'jeu'; }
   else if (jeu.etat === 'niveau') {
     const i = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
-    if (i !== undefined && jeu.cartes[i]) choisirCarte(jeu.cartes[i].cle);
+    if (i !== undefined && jeu.cartes[i]) selectionnerCarte(jeu.cartes[i].cle);
+    else if (e.code === 'Enter' || e.code === 'Space') validerCarte();
   }
 });
 window.addEventListener('keyup', e => { touches[e.code] = false; });
@@ -840,47 +965,24 @@ function directionClavier() {
 }
 
 /* ============================================================
-   9. CLASSEMENT
+   9. CLASSEMENT  (voir leaderboard.js)
    ============================================================ */
 
-const LB_KEY = 'remisurvivor:top5:v1';
-const LB_SIZE = 5;
-let board = [], boardMode = 'memoire', boardReady = false, memoryBoard = [];
-const sortBoard = a => a.sort((x, y) => y.tues - x.tues || y.temps - x.temps).slice(0, LB_SIZE);
+const JEU_ID = 'remi-comte';
+let board = [], boardReady = false;
 
-async function readRaw() {
-  if (window.storage) {
-    try { const r = await window.storage.get(LB_KEY, true); boardMode = 'partage'; return r && r.value ? r.value : null; }
-    catch (e) { boardMode = 'partage'; return null; }
-  }
-  try { const raw = localStorage.getItem(LB_KEY); boardMode = 'local'; return raw; } catch (e) {}
-  boardMode = 'memoire'; return JSON.stringify(memoryBoard);
-}
-async function writeRaw(str) {
-  if (boardMode === 'partage' && window.storage) {
-    try { await window.storage.set(LB_KEY, str, true); return; } catch (e) { boardMode = 'local'; }
-  }
-  if (boardMode === 'local') {
-    try { localStorage.setItem(LB_KEY, str); return; } catch (e) { boardMode = 'memoire'; }
-  }
-  memoryBoard = JSON.parse(str);
-}
 async function loadBoard() {
-  try { const raw = await readRaw(); const p = raw ? JSON.parse(raw) : []; board = Array.isArray(p) ? sortBoard(p) : []; }
-  catch (e) { board = []; }
+  board = await Classement.charger(JEU_ID);
   boardReady = true;
 }
-function qualifie(tues) {
-  if (tues <= 0) return false;
-  if (board.length < LB_SIZE) return true;
-  return tues > board[board.length - 1].tues;
-}
+function qualifie(tues) { return Classement.qualifie(board, tues); }
+
 async function envoyerScore(nom, tues, temps, niveau, manche) {
-  try { const raw = await readRaw(); const p = raw ? JSON.parse(raw) : []; if (Array.isArray(p)) board = sortBoard(p); } catch (e) {}
-  const entree = { name: nom, tues, temps, niveau, manche, ts: Date.now() };
-  board = sortBoard(board.concat([entree]));
-  jeu.monRang = board.indexOf(entree);
-  await writeRaw(JSON.stringify(board));
+  const r = await Classement.envoyer(JEU_ID, {
+    name: nom, score: tues, detail: { temps, niveau, manche },
+  });
+  board = r.liste;
+  jeu.monRang = r.rang;
 }
 
 const nameBox = document.getElementById('nameBox');
@@ -901,6 +1003,12 @@ nameOk.addEventListener('click', e => { e.stopPropagation(); validerNom(); });
 nameInput.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); validerNom(); } });
 nameBox.addEventListener('pointerdown', e => e.stopPropagation());
 
+/* --- Bouton retour vers Le Rediaverse --- */
+const retourEl = document.getElementById('retour');
+retourEl.addEventListener('pointerdown', e => e.stopPropagation());
+function majRetour(visible) { retourEl.classList.toggle('on', !!visible); }
+
+
 async function finPartie() {
   jeu.etat = 'fin'; jeu.finCooldown = 0.8; jeu.monRang = -1;
   SFX.fin(); buzz([60, 60, 120]);
@@ -917,15 +1025,29 @@ function ouvrirNiveau() {
   SFX.niveau();
   const cles = tirerChoix();
   const marge = 14, w = VW - marge * 2, h = 74, gap = 10;
-  const total = cles.length * h + (cles.length - 1) * gap;
-  const y0 = Math.round((VH - total) / 2 + 24);
+  const hBouton = 34, ecart = 14;
+  const total = cles.length * h + (cles.length - 1) * gap + ecart + hBouton;
+  const y0 = Math.round(Math.max(hudTop + HUD_H + 48, (VH - total) / 2 + 18));
   jeu.cartes = cles.map((cle, i) => ({ cle, x: marge, y: y0 + i * (h + gap), w, h }));
+  jeu.carteChoisie = null;
+  const bas = y0 + cles.length * h + (cles.length - 1) * gap;
+  jeu.boutonValider = { x: marge, y: bas + ecart, w, h: hBouton };
 }
 
-function choisirCarte(cle) {
+function selectionnerCarte(cle) {
+  if (jeu.carteChoisie === cle) return;
+  jeu.carteChoisie = cle;
+  beep(660, 0.05, 'triangle', 0.07, 880);
+}
+
+function validerCarte() {
+  if (!jeu.carteChoisie) return;
+  const cle = jeu.carteChoisie;
   SFX.choix();
   appliquerPouvoir(cle);
   jeu.cartes = [];
+  jeu.carteChoisie = null;
+  jeu.boutonValider = null;
   if (jeu.xp >= jeu.xpNeed) {
     jeu.xp -= jeu.xpNeed;
     jeu.niveau++;
@@ -984,7 +1106,7 @@ function blesser(orc, degats) {
   if (orc.pv <= 0) {
     orc.mort = true;
     jeu.tues++;
-    gagnerXP(orc.xp || 1);
+    gagnerXP(orc.xp || CONFIG.XP_PAR_ORC);
     SFX.mort();
     if (orc.elite) {
       jeu.flotteurs.push({ x: orc.x, y: orc.y - 16, txt: '+' + (orc.xp || 1), vie: 1.1, c: '#ffcf5c' });
@@ -1000,25 +1122,80 @@ function blesser(orc, degats) {
   } else SFX.coup();
 }
 
+function coupDeHache(angle, s, deg) {
+  const r2 = s.rayon * s.rayon;
+  let touche = false;
+  for (const o of jeu.orcs) {
+    if (o.mort) continue;
+    const dx = o.x - joueur.x, dy = o.y - joueur.y;
+    if (dx * dx + dy * dy > r2) continue;
+    let ecart = Math.atan2(dy, dx) - angle;
+    ecart = Math.atan2(Math.sin(ecart), Math.cos(ecart));   // ramené dans [-PI, PI]
+    if (Math.abs(ecart) > s.ouverture / 2) continue;
+    blesser(o, s.degats * deg);
+    touche = true;
+  }
+  jeu.effets.push({
+    type: 'coupe', x: joueur.x, y: joueur.y,
+    angle, ouverture: s.ouverture, r: s.rayon, vie: 0.20, max: 0.20,
+  });
+  if (touche) SFX.coup();
+  beep(touche ? 240 : 320, 0.06, 'square', 0.05, 140);
+}
+
 function majArmes(dt) {
   const deg = bonusDegats(), cad = bonusCadence();
 
-  // --- Arc : tire droit devant, sans viser ---
+  // --- Hache de bûcheron : devant, puis dans le dos ---
+  const sh = statsDe('fendoir');
+  if (sh) {
+    minuteur('fendoir', sh.delai * cad, () => {
+      const devant = Math.atan2(joueur.ay, joueur.ax);
+      coupDeHache(devant, sh, deg);
+      jeu.differes.push({ t: sh.retard, fn: () => coupDeHache(devant + Math.PI, sh, deg) });
+    });
+  }
+
+  // --- Arc : vise l'orc le plus proche ---
   const sa = statsDe('arc');
   if (sa) {
     minuteur('arc', sa.delai * cad, () => {
-      const base = Math.atan2(joueur.ay, joueur.ax);
+      const cible = orcLePlusProche(joueur.x, joueur.y);
+      const base = cible
+        ? Math.atan2(cible.y - joueur.y, cible.x - joueur.x)
+        : Math.atan2(joueur.ay, joueur.ax);
       for (let i = 0; i < sa.nb; i++) {
         const decalage = sa.nb === 1 ? 0 : (i - (sa.nb - 1) / 2) * sa.ecart;
         const a = base + decalage;
         jeu.projectiles.push({
           type: 'fleche', x: joueur.x, y: joueur.y,
           vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, angle: a,
-          degats: sa.degats * deg, vie: 2.2,
-          perce: sa.perce, touches: [],
+          degats: sa.degats * deg, vie: 3.2,
+          perce: sa.perce, perceMax: sa.perce, touches: [],
+          retour: sa.retour, phase: 'aller', parcouru: 0, portee: 115,
         });
       }
       beep(520, 0.05, 'triangle', 0.05, 760);
+    });
+  }
+
+  // --- Cri du Nazgûl ---
+  const scri = statsDe('cri');
+  if (scri) {
+    minuteur('cri', scri.delai * cad, () => {
+      const r2 = scri.rayon * scri.rayon;
+      let touche = false;
+      for (const o of jeu.orcs) {
+        if (o.mort || dist2(joueur.x, joueur.y, o.x, o.y) > r2) continue;
+        if ((o.immuPeur || 0) > 0) continue;      // il vient déjà de détaler
+        const duree = scri.duree * (o.elite ? 0.5 : 1);
+        o.peur = duree;
+        o.immuPeur = duree + REPOS_PEUR;          // garantit une fenêtre où il revient
+        touche = true;
+      }
+      jeu.effets.push({ type: 'cri', x: joueur.x, y: joueur.y, r: scri.rayon, vie: 0.45, max: 0.45 });
+      beep(170, 0.34, 'sawtooth', 0.09, 55);
+      if (touche) buzz(20);
     });
   }
 
@@ -1144,9 +1321,13 @@ function update(dt) {
 
   // --- Orcs ---
   for (const o of jeu.orcs) {
-    const a = Math.atan2(joueur.y - o.y, joueur.x - o.x);
-    o.x += Math.cos(a) * o.v * dt;
-    o.y += Math.sin(a) * o.v * dt;
+    o.peur = Math.max(0, (o.peur || 0) - dt);
+    o.immuPeur = Math.max(0, (o.immuPeur || 0) - dt);
+    const fuit = o.peur > 0;
+    const a = Math.atan2(joueur.y - o.y, joueur.x - o.x) + (fuit ? Math.PI : 0);
+    const v = o.v * (fuit ? 0.9 : 1);   // il détale en trébuchant, pas plus vite
+    o.x += Math.cos(a) * v * dt;
+    o.y += Math.sin(a) * v * dt;
     o.dir = Math.cos(a) > 0 ? 1 : -1;
     o.anim += dt * 7;
     o.flash = Math.max(0, o.flash - dt);
@@ -1192,19 +1373,54 @@ function update(dt) {
   // --- Projectiles ---
   for (let i = jeu.projectiles.length - 1; i >= 0; i--) {
     const p = jeu.projectiles[i];
-    p.x += p.vx * dt; p.y += p.vy * dt; p.vie -= dt;
-    if (p.vie <= 0 || p.x < -12 || p.x > VW + 12 || p.y < -12 || p.y > VH + 12 || pointDansMur(p.x, p.y, 0)) {
+    const ax = p.vx * dt, ay = p.vy * dt;
+    p.x += ax; p.y += ay;
+    p.parcouru += Math.hypot(ax, ay);
+    p.vie -= dt;
+    p.angle = Math.atan2(p.vy, p.vx);
+
+    const horsJeu = p.x < -12 || p.x > VW + 12 || p.y < -12 || p.y > VH + 12;
+    const bloque = pointDansMur(p.x, p.y, 0);
+
+    if (p.phase === 'aller' && (p.parcouru >= p.portee || horsJeu || bloque)) {
+      if (p.retour) {
+        // Demi-tour : la flèche redevient dangereuse pour ceux déjà touchés
+        p.phase = 'retour';
+        p.touches = [];
+        p.perce = p.perceMax;
+        if (bloque) { p.x -= ax; p.y -= ay; }
+      } else {
+        jeu.projectiles.splice(i, 1); continue;
+      }
+    }
+
+    if (p.phase === 'retour') {
+      const a = Math.atan2(joueur.y - p.y, joueur.x - p.x);
+      p.vx = Math.cos(a) * 215; p.vy = Math.sin(a) * 215;
+      if (dist2(p.x, p.y, joueur.x, joueur.y) < 100) { jeu.projectiles.splice(i, 1); continue; }
+    }
+
+    if (p.vie <= 0 || (p.phase === 'aller' && !p.retour && (horsJeu || bloque))) {
       jeu.projectiles.splice(i, 1); continue;
     }
+
     let consomme = false;
     for (const o of jeu.orcs) {
       if (o.mort || (p.touches && p.touches.indexOf(o) !== -1)) continue;
       if (dist2(p.x, p.y, o.x, o.y) >= 49) continue;
       blesser(o, p.degats);
       if (p.perce > 0) { p.perce--; p.touches.push(o); }
+      else if (p.retour && p.phase === 'aller') { p.phase = 'retour'; p.touches = []; p.perce = p.perceMax; break; }
       else { consomme = true; break; }
     }
     if (consomme) jeu.projectiles.splice(i, 1);
+  }
+
+  // --- Actions différées (le coup de hache dans le dos) ---
+  for (let i = jeu.differes.length - 1; i >= 0; i--) {
+    const d = jeu.differes[i];
+    d.t -= dt;
+    if (d.t <= 0) { jeu.differes.splice(i, 1); d.fn(); }
   }
 
   // --- Nettoyage ---
@@ -1227,11 +1443,29 @@ function update(dt) {
    ============================================================ */
 
 function drawJoueur(g) {
-  if (jeu.invuln > 0 && Math.floor(jeu.invuln * 16) % 2 === 0) return;
+  // Sur 1,7 s, un clignotement franc ferait perdre Rémi de vue : on le laisse
+  // visible en transparence sur les images creuses.
+  const clignote = jeu.invuln > 0 && Math.floor(jeu.invuln * 12) % 2 === 0;
+  if (clignote) g.globalAlpha = 0.35;
+
   const spr = (joueur.dir > 0 ? SPR.remi.d : SPR.remi.g)[joueur.frame];
   g.fillStyle = 'rgba(0,0,0,0.20)';
   g.fillRect(Math.round(joueur.x - 6), Math.round(joueur.y + 9), 12, 3);
   g.drawImage(spr, Math.round(joueur.x - spr.pw / 2), Math.round(joueur.y - spr.ph + 11));
+
+  g.globalAlpha = 1;
+
+  // Halo pour signaler clairement que les coups ne passent pas
+  if (jeu.invuln > 0) {
+    const p = Math.min(1, jeu.invuln / CONFIG.INVULN);
+    g.globalAlpha = 0.20 + 0.18 * Math.sin(jeu.t * 14);
+    g.strokeStyle = '#7bd8c8';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.arc(joueur.x, joueur.y + 1, 12 + (1 - p) * 3, 0, 7);
+    g.stroke();
+    g.globalAlpha = 1;
+  }
 }
 
 function drawOrc(g, o) {
@@ -1261,6 +1495,10 @@ function drawOrc(g, o) {
     const fw = o.elite ? 15 : 12, fh = o.elite ? 20 : 16;
     g.fillRect(Math.round(o.x - fw / 2), Math.round(o.y - fh + 7), fw, fh);
     g.globalAlpha = 1;
+  }
+
+  if (o.peur > 0) {
+    drawText(g, '!', Math.round(o.x - 1), Math.round(o.y - (o.elite ? 26 : 22)), 1, '#b98fd6');
   }
 
   // Barre de vie dès que l'orc encaisse plus d'un coup
@@ -1336,13 +1574,23 @@ function drawNiveau(g) {
 
   const y0 = jeu.cartes.length ? jeu.cartes[0].y : VH / 2;
   drawTextCentered(g, 'NIVEAU ' + jeu.niveau, VW / 2, y0 - 40, 3, '#8fc45a');
-  drawTextCentered(g, 'choisis ton pouvoir', VW / 2, y0 - 18, 1, 'rgba(255,253,246,0.6)');
+  drawTextCentered(g, 'choisis un pouvoir, puis valide', VW / 2, y0 - 18, 1, 'rgba(255,253,246,0.6)');
 
   for (const c of jeu.cartes) {
     const p = POUVOIRS[c.cle];
     const r = RARETES[p.rarete];
     const nv = niveauDe(c.cle);
+    const prise = jeu.carteChoisie === c.cle;
+
+    if (prise) {
+      g.fillStyle = r.couleur;
+      g.fillRect(c.x - 3, c.y - 3, c.w + 6, c.h + 6);
+    }
     cadre(g, c.x, c.y, c.w, c.h, r.couleur);
+    if (prise) {
+      g.fillStyle = 'rgba(255,255,255,0.07)';
+      g.fillRect(c.x, c.y, c.w, c.h);
+    }
 
     drawText(g, p.nom, c.x + 10, c.y + 10, 1, r.couleur);
     const et = nv === 0 ? 'NOUVEAU' : 'NIV ' + nv + ' > ' + (nv + 1);
@@ -1353,12 +1601,30 @@ function drawNiveau(g) {
     const lignes = wrapText(p.desc, c.w - 20);
     lignes.slice(0, 3).forEach((l, i) => drawText(g, l, c.x + 10, c.y + 34 + i * 8, 1, '#fffdf6'));
 
-    // Jauge de puissance
     for (let i = 0; i < MAX_NIVEAU_POUVOIR; i++) {
       const bx = c.x + 10 + i * 9, by = c.y + c.h - 12;
       g.fillStyle = i < nv ? r.couleur : (i === nv ? 'rgba(255,207,92,0.85)' : 'rgba(255,255,255,0.15)');
       g.fillRect(bx, by, 7, 4);
     }
+
+    if (prise) {
+      drawText(g, 'X', c.x + c.w - 16, c.y + c.h - 13, 1, r.couleur);
+    }
+  }
+
+  // Bouton de validation, inerte tant qu'aucune carte n'est prise
+  const b = jeu.boutonValider;
+  if (b) {
+    const pret = !!jeu.carteChoisie;
+    g.fillStyle = 'rgba(9,12,7,0.9)'; g.fillRect(b.x + 3, b.y + 3, b.w, b.h);
+    g.fillStyle = pret ? '#8fc45a' : 'rgba(60,72,48,0.95)';
+    g.fillRect(b.x, b.y, b.w, b.h);
+    if (pret) {
+      g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(b.x, b.y, b.w, 2);
+    }
+    const txt = pret ? 'VALIDER' : 'CHOISIS UN POUVOIR';
+    const sc = pret ? 2 : 1;
+    drawTextCentered(g, txt, VW / 2, b.y + (b.h - 5 * sc) / 2, sc, pret ? '#18220f' : 'rgba(255,253,246,0.35)');
   }
 }
 
@@ -1369,7 +1635,7 @@ function drawMenu(g) {
   const sub = wrapText('Remi defend la Comte contre les orcs. Survis le plus longtemps possible', pw - PAD * 2);
   const regles = [
     'Fais glisser ton doigt n importe ou pour deplacer Remi',
-    'Son arc tire droit devant lui, oriente le avec le joystick',
+    'Son arc vise seul l orc le plus proche, laisse le travailler',
     'Les autres pouvoirs se declenchent tout seuls',
     'Chaque orc vaincu donne 1 point d experience',
     'Les orcs cercles de rouge sont des elites : durs a tuer, mais ils rapportent 10 fois plus',
@@ -1406,7 +1672,7 @@ function drawMenu(g) {
   g.globalAlpha = 1;
 
   if (board.length) {
-    const t = 'Record : ' + board[0].name + '  ' + board[0].tues + ' orcs';
+    const t = 'Record : ' + board[0].name + '  ' + board[0].score + ' orcs';
     drawTextCentered(g, t, VW / 2, py + ph + 10, 1, 'rgba(255,207,92,0.7)');
   }
 }
@@ -1433,7 +1699,7 @@ function drawFin(g) {
   y += 5 + 14;
 
   drawText(g, 'TOP 5', px + PAD, y, 1, '#8fc45a');
-  const modeTxt = boardMode === 'partage' ? 'monde' : 'cet appareil';
+  const modeTxt = Classement.libelle();
   drawText(g, modeTxt, px + pw - PAD - textWidth(modeTxt, 1), y, 1, 'rgba(255,255,255,0.32)');
   y += 10;
   g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(px + PAD, y, pw - PAD * 2, 1);
@@ -1448,7 +1714,7 @@ function drawFin(g) {
       if (moi) { g.fillStyle = 'rgba(255,207,92,0.12)'; g.fillRect(px + PAD - 3, y - 3, pw - PAD * 2 + 6, 10); }
       drawText(g, (i + 1) + '.', px + PAD, y, 1, moi ? '#ffcf5c' : 'rgba(255,255,255,0.4)');
       drawText(g, e.name, px + PAD + 14, y, 1, col);
-      const sc = String(e.tues);
+      const sc = String(e.score);
       drawText(g, sc, px + pw - PAD - textWidth(sc, 1), y, 1, col);
       y += 10;
     });
@@ -1480,7 +1746,33 @@ function render() {
   for (const e of jeu.effets) {
     const p = e.vie / e.max;
     g.globalAlpha = p * 0.5;
-    if (e.type === 'pipe') {
+    if (e.type === 'cri') {
+      const av = 1 - p;
+      g.globalAlpha = p * 0.7;
+      g.strokeStyle = '#b98fd6'; g.lineWidth = 2;
+      g.beginPath(); g.arc(e.x, e.y, e.r * av, 0, 7); g.stroke();
+      g.globalAlpha = p * 0.35;
+      g.strokeStyle = '#6b4a8a'; g.lineWidth = 4;
+      g.beginPath(); g.arc(e.x, e.y, e.r * av * 0.82, 0, 7); g.stroke();
+      g.globalAlpha = 1;
+    } else if (e.type === 'coupe') {
+      const av = 1 - p;                       // 0 -> 1 pendant le coup
+      g.globalAlpha = p * 0.85;
+      g.strokeStyle = '#e8eef5';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(e.x, e.y, e.r * 0.82, e.angle - e.ouverture / 2, e.angle + e.ouverture / 2);
+      g.stroke();
+      // La lame balaie l'arc
+      const a = e.angle - e.ouverture / 2 + av * e.ouverture;
+      g.globalAlpha = p;
+      g.save();
+      g.translate(Math.round(e.x + Math.cos(a) * e.r * 0.82), Math.round(e.y + Math.sin(a) * e.r * 0.82));
+      g.rotate(a + Math.PI / 2);
+      g.drawImage(SPR.hache, -Math.round(SPR.hache.pw / 2), -Math.round(SPR.hache.ph / 2));
+      g.restore();
+      g.globalAlpha = 1;
+    } else if (e.type === 'pipe') {
       g.fillStyle = '#d8d2c4';
       g.beginPath(); g.arc(e.x, e.y, e.r * (1.05 - p * 0.15), 0, 7); g.fill();
     } else {
@@ -1566,6 +1858,7 @@ function loop(now) {
       else { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; }
     }
   }
+  majRetour(jeu.etat === 'menu' || jeu.etat === 'fin');
   render();
 }
 
