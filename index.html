@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Le Rediaverse</title>
+<style>
+  :root{
+    --sat:env(safe-area-inset-top,0px);
+    --sab:env(safe-area-inset-bottom,0px);
+    --encre:#fdfbf5;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{
+    height:100%;width:100%;background:#0b0910;overflow:hidden;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  body{
+    display:flex;flex-direction:column;align-items:center;
+    padding:calc(var(--sat) + 10px) 10px calc(var(--sab) + 10px);
+    gap:10px;
+  }
+
+  /* --- Titre --- */
+  header{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:5px}
+  #titre{
+    display:block;image-rendering:pixelated;image-rendering:crisp-edges;
+    width:min(86vw,380px);height:auto;
+  }
+  .accroche{
+    color:rgba(253,251,245,.42);font-size:10px;letter-spacing:.22em;
+    text-transform:uppercase;text-align:center;
+  }
+
+  /* --- La planche de comics --- */
+  .planche{
+    flex:1 1 auto;width:100%;max-width:760px;min-height:0;
+    background:var(--encre);
+    padding:5px;display:flex;gap:6px;              /* l'encre blanche fait cadre et gouttiere */
+    box-shadow:0 0 0 2px #0b0910, 0 8px 0 rgba(0,0,0,.45);
+  }
+  .case{
+    flex:1 1 0;min-width:0;position:relative;
+    display:flex;flex-direction:column;align-items:center;
+    text-decoration:none;color:inherit;overflow:hidden;
+    border:2px solid #100c17;
+    transition:transform .12s ease, filter .12s ease;
+  }
+  .case:active{transform:translateY(3px);filter:brightness(1.12)}
+  .case:focus-visible{outline:3px solid #ffd23f;outline-offset:-3px}
+  .case.lidia{background:linear-gradient(180deg,#2a1b46 0%,#5b3a80 55%,#8f5f9b 100%)}
+  .case.remi{background:linear-gradient(180deg,#7fb4e0 0%,#a8d18a 45%,#6d9c46 100%)}
+
+  .vignette{
+    display:block;image-rendering:pixelated;image-rendering:crisp-edges;
+    width:100%;height:auto;flex:0 0 auto;
+  }
+  .infos{
+    flex:1 1 auto;min-height:0;width:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+    gap:6px;padding:8px 8px 12px;text-align:center;
+    background:linear-gradient(180deg,rgba(11,9,16,0) 0%,rgba(11,9,16,.72) 40%,rgba(11,9,16,.88) 100%);
+  }
+  .nom{
+    font-size:clamp(11px,3.4vw,17px);font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;line-height:1.15;
+    text-shadow:2px 2px 0 #0b0910;
+  }
+  .lidia .nom{color:#ff8ab0}
+  .remi .nom{color:#a8e070}
+  .sous{
+    font-size:clamp(8px,2.2vw,11px);line-height:1.45;
+    color:rgba(253,251,245,.66);
+  }
+  .bouton{
+    margin-top:2px;padding:6px 16px;border:2px solid var(--encre);
+    font-size:clamp(9px,2.4vw,12px);font-weight:700;letter-spacing:.14em;
+    text-transform:uppercase;color:#0b0910;background:var(--encre);
+    box-shadow:3px 3px 0 rgba(0,0,0,.55);
+  }
+
+  /* Numeros de case, comme sur une planche */
+  .case::before{
+    content:attr(data-num);position:absolute;top:5px;left:6px;z-index:2;
+    font-size:10px;font-weight:700;color:rgba(11,9,16,.55);
+    background:var(--encre);padding:1px 5px;
+  }
+
+  footer{
+    flex:0 0 auto;color:rgba(253,251,245,.28);
+    font-size:9px;letter-spacing:.16em;text-transform:uppercase;
+  }
+
+  @media (min-width:620px){
+    .planche{padding:7px;gap:9px}
+    .infos{padding:12px 14px 16px;gap:8px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <canvas id="titre" aria-label="Le Rediaverse"></canvas>
+  <p class="accroche">Deux heros, deux mondes</p>
+</header>
+
+<main class="planche">
+  <a class="case lidia" href="donut-run.html" data-num="1">
+    <canvas class="vignette" id="vLidia" aria-hidden="true"></canvas>
+    <div class="infos">
+      <p class="nom">Donut Run</p>
+      <p class="sous">Lidia court, saute et engloutit les donuts. Guepes et demarcheurs s en melent.</p>
+      <span class="bouton">Jouer</span>
+    </div>
+  </a>
+
+  <a class="case remi" href="remi-survivor.html" data-num="2">
+    <canvas class="vignette" id="vRemi" aria-hidden="true"></canvas>
+    <div class="infos">
+      <p class="nom">La Comte</p>
+      <p class="sous">Remi tient la Comte face aux orcs. Chaque niveau debloque un pouvoir.</p>
+      <span class="bouton">Jouer</span>
+    </div>
+  </a>
+</main>
+
+<footer>Hasard Studio</footer>
+
+<script>
+'use strict';
+
+/* ============================================================
+   Outils pixel — mêmes conventions que les deux jeux
+   ============================================================ */
+
+function makeSprite(rows, palette, scale = 1) {
+  const w = Math.max(...rows.map(r => r.length)), h = rows.length;
+  const cv = document.createElement('canvas');
+  cv.width = w * scale; cv.height = h * scale;
+  const g = cv.getContext('2d');
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      const ch = rows[y][x];
+      if (ch === ' ' || ch === '.') continue;
+      const col = palette[ch];
+      if (!col) continue;
+      g.fillStyle = col;
+      g.fillRect(x * scale, y * scale, scale, scale);
+    }
+  }
+  cv.pw = cv.width; cv.ph = cv.height;
+  return cv;
+}
+function flipSprite(src) {
+  const cv = document.createElement('canvas');
+  cv.width = src.width; cv.height = src.height;
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.translate(src.width, 0); g.scale(-1, 1);
+  g.drawImage(src, 0, 0);
+  cv.pw = src.pw; cv.ph = src.ph;
+  return cv;
+}
+
+const FONT = {
+  'A':['###','# #','###','# #','# #'], 'B':['## ','# #','## ','# #','## '],
+  'C':['###','#  ','#  ','#  ','###'], 'D':['## ','# #','# #','# #','## '],
+  'E':['###','#  ','###','#  ','###'], 'F':['###','#  ','###','#  ','#  '],
+  'G':['###','#  ','# #','# #','###'], 'H':['# #','# #','###','# #','# #'],
+  'I':['###',' # ',' # ',' # ','###'], 'J':['  #','  #','  #','# #','###'],
+  'K':['# #','# #','## ','# #','# #'], 'L':['#  ','#  ','#  ','#  ','###'],
+  'M':['# #','###','# #','# #','# #'], 'N':['## ','# #','# #','# #','# #'],
+  'O':['###','# #','# #','# #','###'], 'P':['###','# #','###','#  ','#  '],
+  'Q':['###','# #','# #','###','  #'], 'R':['###','# #','###','## ','# #'],
+  'S':['###','#  ','###','  #','###'], 'T':['###',' # ',' # ',' # ',' # '],
+  'U':['# #','# #','# #','# #','###'], 'V':['# #','# #','# #','# #',' # '],
+  'W':['# #','# #','# #','###','# #'], 'X':['# #','# #',' # ','# #','# #'],
+  'Y':['# #','# #',' # ',' # ',' # '], 'Z':['###','  #',' # ','#  ','###'],
+  ' ':['   ','   ','   ','   ','   '],
+};
+const strip = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+const textW = (s, sc = 1, sp = 1) => strip(s).length * (3 + sp) * sc - sp * sc;
+
+function drawText(g, str, x, y, sc, col, sp = 1) {
+  g.fillStyle = col;
+  let cx = Math.round(x);
+  for (const ch of strip(str)) {
+    const gl = FONT[ch] || FONT[' '];
+    for (let r = 0; r < 5; r++)
+      for (let c = 0; c < 3; c++)
+        if (gl[r][c] === '#') g.fillRect(cx + c * sc, Math.round(y) + r * sc, sc, sc);
+    cx += (3 + sp) * sc;
+  }
+}
+
+/* ============================================================
+   Titre de la planche
+   ============================================================ */
+
+(function titre() {
+  const TXT = 'LE REDIAVERSE';
+  const sc = 2, pad = 6, ombre = 3;
+  const cv = document.getElementById('titre');
+  cv.width = textW(TXT, sc) + pad * 2 + ombre;
+  cv.height = 5 * sc + pad * 2 + ombre;
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+
+  // Contour noir épais, puis ombre coloree, puis le lettrage blanc
+  for (let dx = -1; dx <= 1; dx++)
+    for (let dy = -1; dy <= 1; dy++)
+      drawText(g, TXT, pad + dx, pad + dy, sc, '#0b0910');
+  drawText(g, TXT, pad + ombre, pad + ombre, sc, '#ff5f8f');
+  drawText(g, TXT, pad, pad, sc, '#fdfbf5');
+})();
+
+/* ============================================================
+   Vignette 1 — Lidia
+   ============================================================ */
+
+const PAL_LIDIA = {
+  K:'#241826', S:'#f4c9a0', H:'#4a2f1c', h:'#33200f',
+  T:'#fdfbf5', t:'#d5cec4', P:'#3f6fc4', B:'#f7f3ee',
+  E:'#241826', J:'#ff5f8f', C:'#7bd8c8', D:'#d69a70', M:'#8b5fbf',
+  Y:'#ffd23f', G:'#d6ecff', N:'#241826',
+};
+
+const LIDIA_HAUT = [
+  '    KKKKKK    ',
+  '  KKHHHHHHK   ',
+  ' KHHHHHHHHHK  ',
+  ' KHHHSSSSSSK  ',
+  ' KHHSSESSESK  ',
+  ' KHHSSSSSSSK  ',
+  ' KHHHKSSSSK   ',
+  ' KHHHHKSSK    ',
+  ' KHHHHKTTTK   ',
+  ' KHHHSTTTTSK  ',
+  ' KHHHSTTTTSK  ',
+  '  KHHKTTTTKS  ',
+  '   KhKTTTTK   ',
+  '   KttttttK   ',
+];
+const LIDIA_JAMBES = [
+  ['   KPPPPPPK   ', '   KPPKKPPK   ', '  KPPK KPPK   ', '  KPK   KPK   ', ' KBBK   KBBK  ', '  KK     KK   '],
+  ['   KPPPPPPK   ', '   KPPPPPPK   ', '    KPPPPK    ', '    KPPPPK    ', '   KBBBBBK    ', '    KKKK      '],
+  ['   KPPPPPPK   ', '   KPPKKPPK   ', '   KPPK KPPK  ', '   KPK   KPK  ', '  KBBK   KBBK ', '   KK     KK  '],
+];
+const DONUT = [
+  '  JJJJ  ',
+  ' JCJJCJ ',
+  'JJDDDDJJ',
+  'JDD  DDJ',
+  'JDD  DDJ',
+  'JJDDDDJJ',
+  ' JMJJCJ ',
+  '  JJJJ  ',
+];
+const GUEPE = [
+  '  GG   GG ',
+  ' GGGG GGGG',
+  '  NNNNNN  ',
+  ' NYYNNYYN ',
+  'NYYYNNYYYN',
+  ' NYYNNYYN ',
+  '  NNNNNN  ',
+  '    N N   ',
+];
+
+/* ============================================================
+   Vignette 2 — Rémi
+   ============================================================ */
+
+const PAL_REMI = {
+  K:'#1c1410', S:'#f0c096', H:'#4a2f1c', B:'#5c3a22', b:'#6e4728',
+  T:'#5d8f4a', t:'#456b37', P:'#6b4a2c', O:'#3a2718',
+  g:'#7d9c52', e:'#3f4d2a', A:'#4a3b2e', n:'#332619',
+  R:'#ff5069', W:'#fdfbf5', w:'#a8813f',
+};
+
+const REMI_HAUT = [
+  '     KKKKK      ',
+  '    KHHHHHK     ',
+  '   KHHHHHHHK    ',
+  '   KHSSSSSHK    ',
+  '   KHSKSSKSK    ',
+  '   KHSbbbbSK    ',
+  '   KBbbSbbBK    ',
+  '   KBBSSSBBK    ',
+  '    KBBBBBK     ',
+  '     KBBBK      ',
+  '   KKTTTTTKK    ',
+  '  KSTTTTTTTSK   ',
+  '  KSTTTTTTTSK   ',
+  '  KKTTTTTTTKK   ',
+  '   KTTTTTTTK    ',
+  '   KtttttttK    ',
+];
+const REMI_JAMBES = [
+  ['   KPPPPPPK     ', '   KPPPPPPK     ', '   KPPK KPPK    ', '   KPK   KPK    ', '  KOOK   KOOK   ', '   KK     KK    '],
+  ['   KPPPPPPK     ', '   KPPPPPPK     ', '    KPPPPK      ', '    KPPPPK      ', '   KOOOOOK      ', '    KKKK        '],
+];
+const ORC = [
+  '    KKKKK     ',
+  '   KeeeeeK    ',
+  '  KeggggggK   ',
+  '  KgRggRggK   ',
+  '  KggggggggK  ',
+  '  KgWgggWgK   ',
+  '   KggggK     ',
+  '  KAAAAAAK    ',
+  ' KgAAAAAAgK   ',
+  ' KgAAAAAAgK   ',
+  ' KKAAAAAAKK   ',
+  '   KnnnnK     ',
+  '   KggggK     ',
+  '   KgKKgK     ',
+  '   KgK KgK    ',
+  '  KeeK KeeK   ',
+];
+const FLECHE = [
+  'W        K  ',
+  ' W     KKKK ',
+  'WWwwwwwwwwK ',
+  ' W     KKKK ',
+  'W        K  ',
+];
+
+/* ============================================================
+   Rendu des deux vignettes
+   ============================================================ */
+
+const LARG = 132, HAUT = 152;
+const SPR = {};
+
+function construire() {
+  SPR.lidia = LIDIA_JAMBES.map(j => makeSprite(LIDIA_HAUT.concat(j), PAL_LIDIA));
+  SPR.donut = makeSprite(DONUT, PAL_LIDIA);
+  SPR.guepe = makeSprite(GUEPE, PAL_LIDIA);
+  const remi = REMI_JAMBES.map(j => makeSprite(REMI_HAUT.concat(j), PAL_REMI));
+  SPR.remi = remi;
+  SPR.orc = flipSprite(makeSprite(ORC, PAL_REMI));
+  SPR.fleche = makeSprite(FLECHE, PAL_REMI);
+}
+
+function prepare(id) {
+  const cv = document.getElementById(id);
+  cv.width = LARG; cv.height = HAUT;
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  return g;
+}
+
+// Décors fixes, générés une fois
+const immeubles = [];
+{
+  let x = -6;
+  while (x < LARG + 10) {
+    const w = 12 + Math.floor(Math.random() * 16);
+    const b = { x, w, h: 26 + Math.floor(Math.random() * 42), lit: [] };
+    for (let wy = 5; wy < b.h - 5; wy += 7)
+      for (let wx = 3; wx < b.w - 4; wx += 6)
+        if (Math.random() < 0.45) b.lit.push([wx, wy]);
+    immeubles.push(b);
+    x += w + 2 + Math.floor(Math.random() * 5);
+  }
+}
+const herbes = [];
+for (let i = 0; i < 90; i++) herbes.push({ x: Math.floor(Math.random() * LARG), y: 46 + Math.floor(Math.random() * (HAUT - 46)), c: Math.random() < 0.5 ? '#5d8a3b' : '#7fae53' });
+const fleurs = [];
+for (let i = 0; i < 22; i++) fleurs.push({ x: Math.floor(Math.random() * (LARG - 3)), y: 50 + Math.floor(Math.random() * (HAUT - 54)), c: ['#f5e05c', '#f2f2ee', '#e88fb0'][Math.floor(Math.random() * 3)] });
+
+function dessinerLidia(g, t) {
+  const sol = HAUT - 30;
+
+  const ciel = g.createLinearGradient(0, 0, 0, sol);
+  ciel.addColorStop(0, '#1b2a5e'); ciel.addColorStop(0.55, '#4b3f86'); ciel.addColorStop(1, '#8f5f9b');
+  g.fillStyle = ciel; g.fillRect(0, 0, LARG, sol);
+
+  g.fillStyle = 'rgba(255,247,214,0.85)';
+  g.beginPath(); g.arc(LARG * 0.76, 26, 8, 0, 7); g.fill();
+
+  for (const b of immeubles) {
+    g.fillStyle = '#2a2140'; g.fillRect(b.x, sol - b.h, b.w, b.h);
+    g.fillStyle = '#372c52'; g.fillRect(b.x, sol - b.h, b.w, 2);
+    g.fillStyle = 'rgba(255,214,120,0.8)';
+    for (const [wx, wy] of b.lit) g.fillRect(b.x + wx, sol - b.h + wy, 2, 3);
+  }
+
+  g.fillStyle = '#3b3350'; g.fillRect(0, sol, LARG, HAUT - sol);
+  g.fillStyle = '#4a4166'; g.fillRect(0, sol, LARG, 3);
+  g.fillStyle = '#2c2540';
+  for (let x = (Math.floor(t * 26) % 22) - 22; x < LARG; x += 22) g.fillRect(x, sol + 3, 2, HAUT - sol - 3);
+
+  // Arc de donuts
+  for (let i = 0; i < 5; i++) {
+    const p = i / 4;
+    const x = 58 + i * 15;
+    const y = sol - 26 - Math.sin(p * Math.PI) * 26 + Math.sin(t * 3 + i) * 1.5;
+    g.drawImage(SPR.donut, Math.round(x), Math.round(y));
+  }
+
+  g.drawImage(SPR.guepe, 96, Math.round(38 + Math.sin(t * 4) * 4));
+
+  const spr = SPR.lidia[Math.floor(t * 8) % SPR.lidia.length];
+  const bond = Math.abs(Math.sin(t * 8)) * 1.5;
+  g.fillStyle = 'rgba(0,0,0,0.22)';
+  g.fillRect(18, sol, 16, 2);
+  g.drawImage(spr, 12, Math.round(sol - spr.ph + 1 - bond));
+}
+
+function dessinerRemi(g, t) {
+  const ciel = g.createLinearGradient(0, 0, 0, 52);
+  ciel.addColorStop(0, '#8ec4ec'); ciel.addColorStop(1, '#bfe0c0');
+  g.fillStyle = ciel; g.fillRect(0, 0, LARG, 52);
+
+  // Collines de la Comté
+  g.fillStyle = '#7fae53';
+  for (let i = 0; i < 3; i++) {
+    const cx = 20 + i * 44, r = 26 + i * 4;
+    g.beginPath(); g.arc(cx, 56, r, Math.PI, 0); g.fill();
+  }
+  // Porte de trou de hobbit
+  g.fillStyle = '#3f6b2f'; g.beginPath(); g.arc(64, 50, 9, Math.PI, 0); g.fill();
+  g.fillStyle = '#c9a24a'; g.beginPath(); g.arc(64, 50, 6, Math.PI, 0); g.fill();
+  g.fillStyle = '#7a5a24'; g.fillRect(66, 45, 2, 2);
+
+  g.fillStyle = '#6d9c46'; g.fillRect(0, 46, LARG, HAUT - 46);
+
+  // Sentier
+  g.fillStyle = '#b79b6a';
+  for (let y = 46; y < HAUT; y += 2) {
+    const cx = LARG * 0.5 + Math.sin(y * 0.05) * 22;
+    g.fillRect(Math.round(cx - 9), y, 18, 2);
+  }
+
+  for (const h of herbes) { g.fillStyle = h.c; g.fillRect(h.x, h.y, 2, 1); }
+  for (const f of fleurs) { g.fillStyle = f.c; g.fillRect(f.x, f.y, 2, 2); }
+
+  // Haie
+  g.fillStyle = '#2f5c2a'; g.fillRect(8, 74, 34, 9);
+  g.fillStyle = '#4a8a3c'; g.fillRect(8, 74, 34, 6);
+  g.fillStyle = '#63a84c'; g.fillRect(8, 74, 34, 2);
+
+  // Orc, halo d'élite
+  const ox = 96, oy = 118 + Math.sin(t * 2.4) * 2;
+  const grad = g.createRadialGradient(ox, oy - 6, 2, ox, oy - 6, 15 + Math.sin(t * 5) * 1.5);
+  grad.addColorStop(0, 'rgba(255,60,80,0.42)');
+  grad.addColorStop(0.55, 'rgba(255,60,80,0.16)');
+  grad.addColorStop(1, 'rgba(255,60,80,0)');
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(ox, oy - 6, 16, 0, 7); g.fill();
+  g.fillStyle = 'rgba(0,0,0,0.20)'; g.fillRect(ox - 6, oy + 1, 12, 2);
+  g.drawImage(SPR.orc, Math.round(ox - SPR.orc.pw / 2), Math.round(oy - SPR.orc.ph + 3));
+
+  // Flèche en vol
+  const fx = 46 + ((t * 46) % 44);
+  g.drawImage(SPR.fleche, Math.round(fx), Math.round(oy - 14));
+
+  const spr = SPR.remi[Math.floor(t * 5) % SPR.remi.length];
+  g.fillStyle = 'rgba(0,0,0,0.20)'; g.fillRect(28, 122, 12, 2);
+  g.drawImage(spr, Math.round(34 - spr.pw / 2), Math.round(124 - spr.ph));
+}
+
+/* ============================================================
+   Boucle
+   ============================================================ */
+
+construire();
+const gL = prepare('vLidia');
+const gR = prepare('vRemi');
+
+let debut = 0;
+function boucle(now) {
+  requestAnimationFrame(boucle);
+  if (!debut) debut = now;
+  const t = (now - debut) / 1000;
+  dessinerLidia(gL, t);
+  dessinerRemi(gR, t);
+}
+requestAnimationFrame(boucle);
+</script>
+</body>
+</html>
