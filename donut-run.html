@@ -38,16 +38,29 @@
   }
   #nameOk:active{transform:translate(2px,2px);box-shadow:1px 1px 0 rgba(0,0,0,.5)}
   #nameOk:focus-visible,#nameInput:focus-visible{outline:2px solid #ffd23f;outline-offset:2px}
+
+  #retour{
+    position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:20;
+    display:none;align-items:center;gap:6px;
+    padding:7px 12px;background:rgba(11,9,16,.82);border:2px solid #ff5f8f;
+    color:#ff5f8f;text-decoration:none;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  }
+  #retour.on{display:flex}
+  #retour:active{transform:translate(1px,1px)}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<a id="retour" href="index.html">&lt; Rediaverse</a>
 <div id="nameBox">
   <p id="nameTitle">Tu entres dans le top 5</p>
   <p id="nameSub">Choisis ton pseudo</p>
   <input id="nameInput" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Pseudo">
   <button id="nameOk">Valider</button>
 </div>
+<script src="leaderboard.js"></script>
 <script>
 'use strict';
 
@@ -64,9 +77,9 @@ const CONFIG = {
   SPEED_CAP: 330,          // plafond de sécurité (met à 99999 pour l'enlever)
 
   // --- Saut ---
-  GRAVITY: 1500,
-  JUMP_VELOCITY: 470,
-  DOUBLE_JUMP_VELOCITY: 410,
+  GRAVITY: 1400,
+  JUMP_VELOCITY: 540,
+  DOUBLE_JUMP_VELOCITY: 460,
   MAX_JUMPS: 2,
   JUMP_CUT: 0.45,          // relâcher tôt coupe le saut (feeling)
   COYOTE_TIME: 0.10,
@@ -75,6 +88,11 @@ const CONFIG = {
   // --- Vies ---
   LIVES: 3,
   INVULN_TIME: 1.6,
+
+  // --- Le chat ---
+  CHAT_TOUS_LES: 2,        // un chat à chaque passage de niveau pair
+  CHAT_BONUS_DONUTS: 10,   // si Lidia a déjà ses 3 cœurs
+  CHAT_HAUTEUR: 34,
 
   // --- Apparition des obstacles ---
   GAP_MIN: 1.55,           // écart entre obstacles, en secondes de course
@@ -104,6 +122,7 @@ const PAL = {
   E:'#241826', Y:'#ffd23f', N:'#241826', G:'#d6ecff', V:'#ff8c3d',
   v:'#d9662a', L:'#c99b63', W:'#fdfbf5', R:'#e0405a', r:'#a32a42',
   C:'#7bd8c8', M:'#8b5fbf',
+  q:'#e0873f', Q:'#b9642a',                  // pelage du chat
 };
 
 // Construit un canvas depuis un tableau de strings. Largeur = ligne la plus longue.
@@ -330,7 +349,23 @@ function buildSprites() {
   // Versions réduites pour l'écran d'accueil
   SPR.waspSm = makeSprite(waspA, 1);
   SPR.canvasserSm = makeSprite(canvBody, 1);
+  const chatRows = [
+    ' K K   K K  ',
+    ' KqK   KqK  ',
+    'KqqqqqqqqqK ',
+    'KqEqqqqqEqK ',
+    'KqqqqRqqqqK ',
+    'KqqWWWWWqqK ',
+    ' KqqqqqqqK K',
+    ' KqqqqqqqKqK',
+    ' KqqqqqqqqqK',
+    ' KKqqKKqqKK ',
+    '  KK    KK  ',
+  ];
+  SPR.chat = makeSprite(chatRows, 2);
+
   SPR.donutSm = makeSprite(donutRows, 1);
+  SPR.chatSm = makeSprite(chatRows, 1);
 
   // Icône « appui »
   SPR.tap = makeSprite([
@@ -354,6 +389,7 @@ function buildSprites() {
     '  RRR  ',
     '   R   ',
   ], 2, { R:'#ff5069' });
+
   SPR.heartSm = makeSprite([
     ' RR RR ',
     'RRRRRRR',
@@ -424,6 +460,7 @@ const SKY = [
 
 let farLayer = [], midLayer = [], nearLayer = [], groundDeco = [];
 const rnd = (a, b) => a + Math.random() * (b - a);
+const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
 const rndi = (a, b) => Math.floor(rnd(a, b + 1));
 
 function buildBackground() {
@@ -560,85 +597,29 @@ const SFX = {
   donut:  () => { beep(880, 0.06, 'triangle', 0.11); setTimeout(() => beep(1320, 0.07, 'triangle', 0.09), 55); },
   hit:    () => beep(220, 0.28, 'sawtooth', 0.14, 70),
   level:  () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => beep(f, 0.11, 'square', 0.10), i * 70)); },
+  chat:   () => { [660, 880, 1175].forEach((f, i) => setTimeout(() => beep(f, 0.10, 'triangle', 0.11), i * 60)); },
   over:   () => { [440, 349, 262, 175].forEach((f, i) => setTimeout(() => beep(f, 0.24, 'square', 0.12), i * 150)); },
 };
 
 /* ============================================================
-   6. CLASSEMENT TOP 5
-   Stockage partagé si disponible, sinon local, sinon en mémoire.
+   6. CLASSEMENT TOP 5  (voir leaderboard.js)
    ============================================================ */
 
-const LB_KEY = 'donutrun:top5:v1';
-const LB_SIZE = 5;
-
-let board = [];
-let boardMode = 'memoire';   // partage | local | memoire
-let boardReady = false;
-let memoryBoard = [];
-
-const sortBoard = a => a.sort((x, y) => y.donuts - x.donuts || y.dist - x.dist).slice(0, LB_SIZE);
-
-async function readRaw() {
-  if (window.storage) {
-    try {
-      const r = await window.storage.get(LB_KEY, true);
-      boardMode = 'partage';
-      return r && r.value ? r.value : null;
-    } catch (e) {
-      // La clé n'existe pas encore : le stockage partagé reste utilisable.
-      boardMode = 'partage';
-      return null;
-    }
-  }
-  try {
-    const raw = localStorage.getItem(LB_KEY);
-    boardMode = 'local';
-    return raw;
-  } catch (e) {}
-  boardMode = 'memoire';
-  return JSON.stringify(memoryBoard);
-}
-
-async function writeRaw(str) {
-  if (boardMode === 'partage' && window.storage) {
-    try { await window.storage.set(LB_KEY, str, true); return true; } catch (e) { boardMode = 'local'; }
-  }
-  if (boardMode === 'local') {
-    try { localStorage.setItem(LB_KEY, str); return true; } catch (e) { boardMode = 'memoire'; }
-  }
-  memoryBoard = JSON.parse(str);
-  return true;
-}
+const JEU_ID = 'donut-run';
+let board = [], boardReady = false;
 
 async function loadBoard() {
-  try {
-    const raw = await readRaw();
-    const parsed = raw ? JSON.parse(raw) : [];
-    board = Array.isArray(parsed) ? sortBoard(parsed) : [];
-  } catch (e) {
-    board = [];
-  }
+  board = await Classement.charger(JEU_ID);
   boardReady = true;
 }
+function qualifies(donuts) { return Classement.qualifie(board, donuts); }
 
-function qualifies(donuts) {
-  if (donuts <= 0) return false;
-  if (board.length < LB_SIZE) return true;
-  return donuts > board[board.length - 1].donuts;
-}
-
-async function submitScore(name, donuts, dist, level) {
-  // Relecture juste avant écriture pour limiter les écrasements entre joueurs.
-  try {
-    const raw = await readRaw();
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (Array.isArray(parsed)) board = sortBoard(parsed);
-  } catch (e) {}
-
-  const entry = { name, donuts, dist, level, ts: Date.now() };
-  board = sortBoard(board.concat([entry]));
-  game.myEntry = board.indexOf(entry);
-  await writeRaw(JSON.stringify(board));
+async function submitScore(nom, donuts, dist, niveau) {
+  const r = await Classement.envoyer(JEU_ID, {
+    name: nom, score: donuts, detail: { dist, niveau },
+  });
+  board = r.liste;
+  game.myEntry = r.rang;
 }
 
 /* ============================================================
@@ -655,7 +636,8 @@ const game = {
   donuts: 0, best: 0, bestDist: 0,
   lives: CONFIG.LIVES, invuln: 0,
   banner: 0, shake: 0, flash: 0,
-  obstacles: [], pickups: [], particles: [], floaters: [],
+  obstacles: [], pickups: [], chats: [], particles: [], floaters: [],
+  chatEnAttente: false,
   spawnGap: 0, sinceSpawn: 0,
   runFrame: 0, runTimer: 0,
   deathCause: 'canvasser', awaitingName: false, myEntry: -1, overCooldown: 0,
@@ -669,7 +651,8 @@ function resetGame() {
   game.distance = 0; game.donuts = 0;
   game.lives = CONFIG.LIVES; game.invuln = 0;
   game.banner = 0; game.shake = 0; game.flash = 0;
-  game.obstacles = []; game.pickups = []; game.particles = []; game.floaters = [];
+  game.obstacles = []; game.pickups = []; game.chats = []; game.particles = []; game.floaters = [];
+  game.chatEnAttente = false;
   game.sinceSpawn = 0; game.spawnGap = 320;
   game.awaitingName = false; game.myEntry = -1; game.overCooldown = 0;
   hideNameBox();
@@ -738,15 +721,17 @@ function spawnObstacle() {
   } else if (pick.kind === 'waspLow') {
     push({ type: 'wasp', x: X, y: groundY - rnd(14, 30), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: rnd(3, 6) });
   } else if (pick.kind === 'waspHigh') {
-    push({ type: 'wasp', x: X, y: groundY - rnd(76, 96), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: rnd(4, 8) });
+    push({ type: 'wasp', x: X, y: groundY - rnd(96, 122), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: rnd(4, 8) });
   } else {
     push({ type: 'wasp', x: X, y: groundY - rnd(16, 26), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: 4 });
-    push({ type: 'wasp', x: X + rnd(50, 80), y: groundY - rnd(78, 94), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: 6 });
+    push({ type: 'wasp', x: X + rnd(50, 80), y: groundY - rnd(98, 120), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: 6 });
   }
   return pick.kind;
 }
 
 function addDonut(x, y) { game.pickups.push({ x, y, t: rnd(0, 6), got: false }); }
+
+function spawnChat(x) { game.chats.push({ x, y: groundY - CONFIG.CHAT_HAUTEUR, t: rnd(0, 6) }); }
 
 function spawnDonuts(startX, gapPx, lastKind) {
   const lv = game.level;
@@ -768,7 +753,7 @@ function spawnDonuts(startX, gapPx, lastKind) {
     }
   } else if (mode === 'high') {
     // Nécessite le double saut : récompense risquée
-    const n = rndi(3, 5), y = groundY - rnd(102, 124);
+    const n = rndi(3, 5), y = groundY - rnd(134, 158);
     for (let i = 0; i < n; i++) addDonut(safeX + i * 15, y);
   } else {
     // Juste au-dessus du prochain obstacle : il faut sauter au bon moment
@@ -830,6 +815,12 @@ nameInput.addEventListener('keydown', e => {
 });
 nameBox.addEventListener('pointerdown', e => e.stopPropagation());
 
+/* --- Bouton retour vers Le Rediaverse --- */
+const retourEl = document.getElementById('retour');
+retourEl.addEventListener('pointerdown', e => e.stopPropagation());
+function majRetour(visible) { retourEl.classList.toggle('on', !!visible); }
+
+
 /* ============================================================
    9. BOUCLE PRINCIPALE
    ============================================================ */
@@ -846,6 +837,7 @@ function update(dt) {
     game.level++;
     game.banner = 2.0;
     SFX.level();
+    if (game.level % CONFIG.CHAT_TOUS_LES === 0) game.chatEnAttente = true;
   }
   game.speed = levelSpeed(game.level);
 
@@ -895,7 +887,12 @@ function update(dt) {
     const tighten = Math.max(CONFIG.GAP_TIGHTEN_FLOOR, 1 - (game.level - 1) * CONFIG.GAP_TIGHTEN);
     const gapSec = rnd(CONFIG.GAP_MIN, CONFIG.GAP_MAX) * tighten;
     game.spawnGap = game.speed * gapSec;
-    if (Math.random() < 0.75) spawnDonuts(VW + 30, game.spawnGap, kind);
+    if (game.chatEnAttente) {
+      spawnChat(VW + 30 + game.spawnGap * 0.5);
+      game.chatEnAttente = false;
+    } else if (Math.random() < 0.75) {
+      spawnDonuts(VW + 30, game.spawnGap, kind);
+    }
   }
 
   // --- Obstacles ---
@@ -947,6 +944,29 @@ function update(dt) {
       for (let k = 0; k < 7; k++) {
         const a = Math.random() * Math.PI * 2;
         game.particles.push({ x: d.x + 8, y: d.y + 8, vx: Math.cos(a) * rnd(20, 70), vy: Math.sin(a) * rnd(20, 70), life: rnd(0.2, 0.45), c: k % 2 ? '#ff5f8f' : '#ffd23f', s: 2 });
+      }
+    }
+  }
+
+  // --- Le chat ---
+  for (let i = game.chats.length - 1; i >= 0; i--) {
+    const c = game.chats[i];
+    c.x -= dx; c.t += dt;
+    if (c.x < -30) { game.chats.splice(i, 1); continue; }
+    const cx = HERO.x + HERO.w / 2, cy = groundY - HERO.h + hero.y + HERO.h / 2;
+    if (dist2(c.x + 12, c.y + 11, cx, cy) < 26 * 26) {
+      game.chats.splice(i, 1);
+      if (game.lives < CONFIG.LIVES) {
+        game.lives++;
+        game.floaters.push({ x: HERO.x + 14, y: groundY - HERO.h - 8, txt: '+1 VIE', vie: 1.3, life: 1.3, c: '#ff5069' });
+      } else {
+        game.donuts += CONFIG.CHAT_BONUS_DONUTS;
+        game.floaters.push({ x: HERO.x + 14, y: groundY - HERO.h - 8, txt: '+' + CONFIG.CHAT_BONUS_DONUTS, vie: 1.3, life: 1.3, c: '#ffd23f' });
+      }
+      SFX.chat();
+      for (let k = 0; k < 14; k++) {
+        const a = Math.random() * Math.PI * 2;
+        game.particles.push({ x: c.x + 12, y: c.y + 11, vx: Math.cos(a) * rnd(30, 110), vy: Math.sin(a) * rnd(30, 110), life: rnd(0.3, 0.6), c: k % 2 ? '#ff5069' : '#ffd23f', s: 2 });
       }
     }
   }
@@ -1044,9 +1064,10 @@ const RULES = [
   { icon: 'danger', text: 'Lidia a une peur bleue des guepes et des demarcheurs de rue : evitez-les a tout prix !' },
   { icon: 'hearts', text: 'Lidia ne resistera pas a plus de 3 rencontres : chaque rencontre enleve un coeur' },
   { icon: 'tap',    text: '1 appui = saut, 2 appuis = double saut' },
+  { icon: 'chat',   text: 'Un chat passe tous les 2 niveaux : attrape le, il rend un coeur' },
 ];
 
-const ICON_H = { donut: 8, danger: 20, hearts: 6, tap: 10 };
+const ICON_H = { donut: 8, danger: 20, hearts: 6, tap: 10, chat: 11 };
 
 function wrapText(str, maxW, scale = 1, sp = 1) {
   // La ponctuation française précédée d'une espace ne doit pas ouvrir une ligne
@@ -1076,8 +1097,10 @@ function drawRuleIcon(g, kind, x, y, h) {
     centre(SPR.canvasserSm, 13);
   } else if (kind === 'hearts') {
     for (let i = 0; i < 3; i++) centre(SPR.heartSm, i * 9);
-  } else {
+  } else if (kind === 'tap') {
     centre(SPR.tap, 6);
+  } else {
+    centre(SPR.chatSm, 2);
   }
 }
 
@@ -1135,7 +1158,7 @@ function drawMenu(g) {
   g.globalAlpha = 1;
 
   if (board.length) {
-    const t = 'Record : ' + board[0].name + '  ' + board[0].donuts + ' donuts';
+    const t = 'Record : ' + board[0].name + '  ' + board[0].score + ' donuts';
     drawTextCentered(g, t, VW / 2, py + ph + 10, 1, 'rgba(255,210,63,0.7)');
   }
 }
@@ -1171,7 +1194,7 @@ function drawGameOver(g) {
   y += 5 + 14;
 
   drawText(g, 'TOP 5', px + PAD, y, 1, '#7bd8c8');
-  const modeTxt = boardMode === 'partage' ? 'monde' : 'cet appareil';
+  const modeTxt = Classement.libelle();
   drawText(g, modeTxt, px + pw - PAD - textWidth(modeTxt, 1), y, 1, 'rgba(255,255,255,0.32)');
   y += 5 + 5;
   g.fillStyle = 'rgba(255,255,255,0.12)';
@@ -1191,7 +1214,7 @@ function drawGameOver(g) {
       }
       drawText(g, (i + 1) + '.', px + PAD, y, 1, moi ? '#ffd23f' : 'rgba(255,255,255,0.4)');
       drawText(g, e.name, px + PAD + 14, y, 1, col);
-      const sc = String(e.donuts);
+      const sc = String(e.score);
       drawText(g, sc, px + pw - PAD - textWidth(sc, 1), y, 1, col);
       y += 10;
     }
@@ -1222,6 +1245,18 @@ function render() {
   for (const d of game.pickups) {
     const bob = Math.sin(d.t * 4) * 2;
     g.drawImage(SPR.donut, Math.round(d.x), Math.round(d.y + bob));
+  }
+  for (const c of game.chats) {
+    const bob = Math.sin(c.t * 3) * 3;
+    const y = Math.round(c.y + bob);
+    // Halo pour signaler un bonus, pas un obstacle
+    const pulse = 0.55 + 0.45 * Math.sin(c.t * 5);
+    const grad = g.createRadialGradient(c.x + 12, y + 11, 3, c.x + 12, y + 11, 24);
+    grad.addColorStop(0, 'rgba(255,210,63,' + (0.30 * pulse).toFixed(3) + ')');
+    grad.addColorStop(1, 'rgba(255,210,63,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(c.x + 12, y + 11, 24, 0, 7); g.fill();
+    g.drawImage(SPR.chat, Math.round(c.x), y);
   }
   for (const o of game.obstacles) drawObstacle(g, o);
 
@@ -1274,6 +1309,7 @@ function loop(now) {
       else { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 320 * dt; }
     }
   }
+  majRetour(game.state === 'menu' || game.state === 'over');
   render();
 }
 
