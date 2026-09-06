@@ -639,7 +639,7 @@ const game = {
   obstacles: [], pickups: [], chats: [], particles: [], floaters: [],
   chatEnAttente: false,
   spawnGap: 0, sinceSpawn: 0,
-  runFrame: 0, runTimer: 0,
+  runFrame: 0, runTimer: 0, menuT: 0,
   deathCause: 'canvasser', awaitingName: false, myEntry: -1, overCooldown: 0,
 };
 
@@ -668,7 +668,10 @@ function resetGame() {
 function pressJump() {
   initAudio();
   if (game.awaitingName) return;
-  if (game.state === 'menu') { resetGame(); game.state = 'play'; return; }
+  if (game.state === 'menu') {
+    if (!menuPret()) { game.menuT = 999; return; }   // un appui suffit à tout afficher
+    resetGame(); game.state = 'play'; return;
+  }
   if (game.state === 'over') { if (game.overCooldown > 0) return; resetGame(); game.state = 'play'; return; }
   hero.buffer = CONFIG.JUMP_BUFFER;
   hero.holding = true;
@@ -1157,17 +1160,27 @@ function drawRuleIcon(g, kind, x, y, h) {
   }
 }
 
+const CPS = 85;   // caractères par seconde
+
+function reglesMisesEnPage() {
+  const pw = VW - 20, PAD = 12, ICON_W = 32;
+  const textW = pw - PAD * 2 - ICON_W;
+  return RULES.map(r => ({ icon: r.icon, lines: wrapText(r.text, textW) }));
+}
+const hauteurRegle = r => Math.max(16, ICON_H[r.icon] + 4, r.lines.length * 7 + 6);
+const totalCaracteres = rows => rows.reduce((s, r) => s + r.lines.reduce((n, l) => n + l.length, 0), 0);
+
+function menuPret() {
+  return Math.floor(game.menuT * CPS) >= totalCaracteres(reglesMisesEnPage());
+}
+
 function drawMenu(g) {
   g.fillStyle = 'rgba(11,8,18,0.58)';
   g.fillRect(0, 0, VW, VH);
 
-  const pw = VW - 20;
-  const PAD = 12, ICON_W = 32;
-  const textW = pw - PAD * 2 - ICON_W;
-
-  const rows = RULES.map(r => ({ icon: r.icon, lines: wrapText(r.text, textW) }));
-  const rowH = r => Math.max(16, ICON_H[r.icon] + 4, r.lines.length * 7 + 6);
-  const bodyH = rows.reduce((s, r) => s + rowH(r), 0);
+  const pw = VW - 20, PAD = 12, ICON_W = 32;
+  const rows = reglesMisesEnPage();
+  const bodyH = rows.reduce((s, r) => s + hauteurRegle(r), 0);
 
   const sub = wrapText('Nourris Lidia d un maximum de donuts en evitant ses nemesis', pw - PAD * 2);
   const cta = wrapText('Appuie pour commencer la chasse aux donuts', pw - PAD * 2);
@@ -1177,13 +1190,9 @@ function drawMenu(g) {
   const px = Math.round(VW / 2 - pw / 2);
   const py = Math.round(Math.max(hudTop, (groundY - ph) / 2));
 
-  // Cadre
-  g.fillStyle = 'rgba(9,7,16,0.90)';
-  g.fillRect(px + 3, py + 3, pw, ph);
-  g.fillStyle = 'rgba(24,17,38,0.94)';
-  g.fillRect(px, py, pw, ph);
-  g.fillStyle = '#ff5f8f';
-  g.fillRect(px, py, pw, 2);
+  g.fillStyle = 'rgba(9,7,16,0.90)'; g.fillRect(px + 3, py + 3, pw, ph);
+  g.fillStyle = 'rgba(24,17,38,0.94)'; g.fillRect(px, py, pw, ph);
+  g.fillStyle = '#ff5f8f'; g.fillRect(px, py, pw, 2);
   g.fillStyle = 'rgba(255,210,63,0.35)';
   g.fillRect(px, py + ph - 1, pw, 1);
   g.fillRect(px, py, 1, ph);
@@ -1195,20 +1204,39 @@ function drawMenu(g) {
   sub.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, 'rgba(255,253,246,0.7)'));
   y += sub.length * 7 + 12;
 
+  // Frappe progressive : la mise en page ne bouge pas, seul le texte se dévoile
+  let reste = Math.floor(game.menuT * CPS);
   const rx = px + PAD;
+  const curseur = Math.floor(game.t * 3) % 2 === 0;
+
   for (const r of rows) {
-    const h = rowH(r);
-    drawRuleIcon(g, r.icon, rx, y, h);
-    const ty = y + Math.round((h - (r.lines.length * 7 - 2)) / 2);
-    r.lines.forEach((ln, i) => drawText(g, ln, rx + ICON_W, ty + i * 7, 1, '#fffdf6'));
+    const h = hauteurRegle(r);
+    const total = r.lines.reduce((n, l) => n + l.length, 0);
+    if (reste > 0) {
+      drawRuleIcon(g, r.icon, rx, y, h);
+      const ty = y + Math.round((h - (r.lines.length * 7 - 2)) / 2);
+      let budget = reste;
+      r.lines.forEach((ln, i) => {
+        if (budget <= 0) return;
+        const morceau = ln.slice(0, budget);
+        drawText(g, morceau, rx + ICON_W, ty + i * 7, 1, '#fffdf6');
+        if (budget < ln.length && curseur) {
+          drawText(g, '.', rx + ICON_W + textWidth(morceau, 1) + 2, ty + i * 7 + 1, 1, '#ffd23f');
+        }
+        budget -= ln.length;
+      });
+    }
+    reste -= total;
     y += h;
   }
 
   y += 14;
-  const pulse = 0.55 + 0.45 * Math.sin(game.t * 4);
-  g.globalAlpha = pulse;
-  cta.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, '#7bd8c8'));
-  g.globalAlpha = 1;
+  if (menuPret()) {
+    const pulse = 0.55 + 0.45 * Math.sin(game.t * 4);
+    g.globalAlpha = pulse;
+    cta.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, '#7bd8c8'));
+    g.globalAlpha = 1;
+  }
 
   if (board.length) {
     const t = 'Record : ' + board[0].name + '  ' + board[0].score + ' donuts';
@@ -1352,6 +1380,7 @@ function loop(now) {
     game.t += dt;
     if (game.state === 'over') game.overCooldown = Math.max(0, (game.overCooldown || 0) - dt);
     if (game.state === 'menu') {
+      game.menuT += dt;
       scrollBackground(60 * dt);
       game.runTimer += dt * 8;
       if (game.runTimer > 1) { game.runTimer -= 1; game.runFrame = (game.runFrame + 1) % 4; }
