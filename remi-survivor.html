@@ -395,6 +395,37 @@ function buildSprites() {
     'W        K  ',
   ], 1);
 
+  SPR.doigt = makeSprite([
+    '   KK    ',
+    '  KSSK   ',
+    '  KSSK   ',
+    '  KSSK   ',
+    'K KSSK  K',
+    ' KSSSSSK ',
+    'KSSSSSSSK',
+    'KSSSSSSSK',
+    ' KSSSSSK ',
+    '  KKKKK  ',
+  ], 1);
+
+  SPR.esquive = makeSprite([
+    '  C   C  ',
+    '  CC  CC ',
+    'CCCCCCCCC',
+    '  CC  CC ',
+    '  C   C  ',
+  ], 1, Object.assign({}, PAL, { C: '#7bd8c8' }));
+
+  SPR.etincelle = makeSprite([
+    '    M    ',
+    '  M M M  ',
+    '   MMM   ',
+    'MMMMMMMMM',
+    '   MMM   ',
+    '  M M M  ',
+    '    M    ',
+  ], 1, Object.assign({}, PAL, { M: '#b98fd6' }));
+
   SPR.coeur = makeSprite([
     ' RR RR ',
     'RRRRRRR',
@@ -858,6 +889,7 @@ const jeu = {
   pv: CONFIG.PV_MAX, pvMax: CONFIG.PV_MAX, invuln: 0,
   niveau: 1, xp: 0, xpNeed: CONFIG.XP_BASE,
   manche: 1, budget: 0, restant: 0, delaiSpawn: 0, banniere: 0, balrogFait: true,
+  menuT: 0,
   tues: 0,
   pouvoirs: {},
   orcs: [], projectiles: [], haches: [], effets: [], particules: [], flotteurs: [],
@@ -990,7 +1022,10 @@ function onDown(e) {
   initAudio();
   const p = versMonde(e);
 
-  if (jeu.etat === 'menu') { reset(); jeu.etat = 'jeu'; return; }
+  if (jeu.etat === 'menu') {
+    if (!menuPret()) { jeu.menuT = 999; return; }   // un appui suffit à tout afficher
+    reset(); jeu.etat = 'jeu'; return;
+  }
   if (jeu.etat === 'fin') {
     if (jeu.attenteNom || jeu.finCooldown > 0) return;
     reset(); jeu.etat = 'jeu'; return;
@@ -1041,7 +1076,10 @@ window.addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyM') muted = !muted;
   if (jeu.etat === 'jeu' && (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space')) lancerDash();
-  if (jeu.etat === 'menu' && (e.code === 'Space' || e.code === 'Enter')) { initAudio(); reset(); jeu.etat = 'jeu'; }
+  if (jeu.etat === 'menu' && (e.code === 'Space' || e.code === 'Enter')) {
+    initAudio();
+    if (!menuPret()) jeu.menuT = 999; else { reset(); jeu.etat = 'jeu'; }
+  }
   else if (jeu.etat === 'fin' && !jeu.attenteNom && jeu.finCooldown <= 0 && (e.code === 'Space' || e.code === 'Enter')) { reset(); jeu.etat = 'jeu'; }
   else if (jeu.etat === 'niveau') {
     const i = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
@@ -1375,6 +1413,27 @@ function majArmes(dt) {
       if (touche) SFX.coup();
     });
   }
+}
+
+let uidSeq = 0;
+
+/* ============================================================
+   12. MISE À JOUR
+   ============================================================ */
+
+let lastDt = 0.016;
+
+function update(dt) {
+  lastDt = dt;
+  jeu.t += dt; jeu.temps += dt;
+  jeu.banniere = Math.max(0, jeu.banniere - dt);
+  if (jeu.synergieBanniere) {
+    jeu.synergieBanniere.t -= dt;
+    if (jeu.synergieBanniere.t <= 0) jeu.synergieBanniere = null;
+  }
+  jeu.secousse = Math.max(0, jeu.secousse - dt);
+  jeu.flash = Math.max(0, jeu.flash - dt);
+  jeu.invuln = Math.max(0, jeu.invuln - dt);
 
   // --- Apparitions ---
   if (jeu.restant > 0) {
@@ -1406,6 +1465,7 @@ function majArmes(dt) {
     joueur.y += joueur.ddy * ve * dt;
     joueur.dir = joueur.ddx >= 0 ? 1 : -1;
     souffleDuBalrog(dt);
+    joueur.bouge = true;
   } else {
     const k = directionClavier();
     const dx = stick.actif ? stick.dx : k.dx;
@@ -1418,6 +1478,7 @@ function majArmes(dt) {
       const l = Math.hypot(dx, dy);
       joueur.ax = dx / l; joueur.ay = dy / l;
     }
+    joueur.bouge = (dx !== 0 || dy !== 0);
   }
 
   const hautJouable = hudTop + HUD_H + 6;
@@ -1425,7 +1486,7 @@ function majArmes(dt) {
   joueur.y = Math.max(hautJouable, Math.min(VH - joueur.r - 4, joueur.y));
   resoudreMurs(joueur, joueur.r + 2);
 
-  if (dx || dy) {
+  if (joueur.bouge) {
     joueur.anim += dt * 9;
     if (joueur.anim > 1) { joueur.anim -= 1; joueur.frame = (joueur.frame + 1) % 4; }
   } else joueur.frame = 1;
@@ -1843,27 +1904,48 @@ function drawNiveau(g) {
   }
 }
 
+const REGLES = [
+  { icon: 'remi',      texte: 'Remi defend actuellement la Comte contre les hordes du Mordor, aide le a triompher !' },
+  { icon: 'doigt',     texte: 'Fais glisser ton doigt n importe ou pour deplacer Remi' },
+  { icon: 'esquive',   texte: 'Le bouton en bas a droite declenche une esquive : utilise la a bon escient' },
+  { icon: 'orc',       texte: 'Tuer des orcs te permettra de devenir plus fort et de choisir des pouvoirs les plus devastateurs !' },
+  { icon: 'etincelle', texte: 'Certains pouvoirs synergisent entre eux : cree des combinaisons uniques !' },
+];
+
+const H_ICONE = { remi: 22, doigt: 10, esquive: 5, orc: 16, etincelle: 7 };
+const LARG_ICONE = 24;
+const CPS = 85;   // caractères par seconde
+
+function dessinerIconeRegle(g, genre, x, y, h) {
+  const centre = spr => g.drawImage(spr, Math.round(x + (LARG_ICONE - spr.pw) / 2 - 4), Math.round(y + (h - spr.ph) / 2));
+  if (genre === 'remi') centre(SPR.remi.d[1]);
+  else if (genre === 'orc') centre(SPR.orc.d[0]);
+  else if (genre === 'doigt') centre(SPR.doigt);
+  else if (genre === 'esquive') centre(SPR.esquive);
+  else centre(SPR.etincelle);
+}
+
+function reglesMisesEnPage() {
+  const pw = VW - 20, PAD = 12;
+  const textW = pw - PAD * 2 - LARG_ICONE;
+  return REGLES.map(r => ({ icon: r.icon, lines: wrapText(r.texte, textW) }));
+}
+const hauteurRegle = r => Math.max(16, H_ICONE[r.icon] + 4, r.lines.length * 7 + 6);
+const totalCaracteres = rows => rows.reduce((s, r) => s + r.lines.reduce((n, l) => n + l.length, 0), 0);
+
+function menuPret() {
+  return Math.floor(jeu.menuT * CPS) >= totalCaracteres(reglesMisesEnPage());
+}
+
 function drawMenu(g) {
   g.fillStyle = 'rgba(9,12,7,0.62)'; g.fillRect(0, 0, VW, VH);
 
   const pw = VW - 20, PAD = 12;
-  const sub = wrapText('Remi defend la Comte contre les orcs. Survis le plus longtemps possible', pw - PAD * 2);
-  const regles = [
-    'Fais glisser ton doigt n importe ou pour deplacer Remi',
-    'Son arc vise seul l orc le plus proche, laisse le travailler',
-    'Le bouton en bas a droite declenche une esquive : Remi est invincible pendant l elan',
-    'Les pouvoirs se declenchent tout seuls',
-    'Certains pouvoirs se combinent et debloquent une synergie',
-    'Chaque orc vaincu donne 1 point d experience',
-    'Les orcs cercles de rouge sont des elites : durs a tuer, mais ils rapportent 10 fois plus',
-    'A partir de la manche 4, un Balrog surgit. Il ne connait pas la peur',
-    'A chaque niveau, choisis un pouvoir parmi trois',
-    'Les haies et les murets bloquent tout le monde',
-  ];
-  const lignes = regles.map(r => wrapText(r, pw - PAD * 2 - 8));
-  const bodyH = lignes.reduce((s, l) => s + l.length * 7 + 5, 0);
+  const rows = reglesMisesEnPage();
+  const bodyH = rows.reduce((s, r) => s + hauteurRegle(r), 0);
   const cta = wrapText('Appuie pour defendre la Comte', pw - PAD * 2);
-  const contentH = 20 + 10 + sub.length * 7 + 14 + bodyH + 14 + cta.length * 7;
+
+  const contentH = 20 + 14 + bodyH + 14 + cta.length * 7;
   const ph = contentH + 26;
   const px = Math.round(VW / 2 - pw / 2);
   const py = Math.round(Math.max(hudTop, (VH - ph) / 2));
@@ -1872,22 +1954,41 @@ function drawMenu(g) {
 
   let y = py + 15;
   drawTextCentered(g, 'LA COMTE', VW / 2, y, 4, '#8fc45a');
-  y += 20 + 10;
-  sub.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, 'rgba(255,253,246,0.7)'));
-  y += sub.length * 7 + 14;
+  y += 20 + 14;
 
-  for (const bloc of lignes) {
-    g.fillStyle = '#ffcf5c';
-    g.fillRect(px + PAD, y + 1, 3, 3);
-    bloc.forEach((l, i) => drawText(g, l, px + PAD + 8, y + i * 7, 1, '#fffdf6'));
-    y += bloc.length * 7 + 5;
+  // Frappe progressive : la mise en page est figée, seul le texte se dévoile
+  let reste = Math.floor(jeu.menuT * CPS);
+  const rx = px + PAD;
+  const curseur = Math.floor(jeu.t * 3) % 2 === 0;
+
+  for (const r of rows) {
+    const h = hauteurRegle(r);
+    const total = r.lines.reduce((n, l) => n + l.length, 0);
+    if (reste > 0) {
+      dessinerIconeRegle(g, r.icon, rx, y, h);
+      const ty = y + Math.round((h - (r.lines.length * 7 - 2)) / 2);
+      let budget = reste;
+      r.lines.forEach((ln, i) => {
+        if (budget <= 0) return;
+        const morceau = ln.slice(0, budget);
+        drawText(g, morceau, rx + LARG_ICONE, ty + i * 7, 1, '#fffdf6');
+        if (budget < ln.length && curseur) {
+          drawText(g, '.', rx + LARG_ICONE + textWidth(morceau, 1) + 2, ty + i * 7 + 1, 1, '#ffcf5c');
+        }
+        budget -= ln.length;
+      });
+    }
+    reste -= total;
+    y += h;
   }
 
-  y += 9;
-  const pulse = 0.55 + 0.45 * Math.sin(jeu.t * 4);
-  g.globalAlpha = pulse;
-  cta.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, '#ffcf5c'));
-  g.globalAlpha = 1;
+  y += 14;
+  if (menuPret()) {
+    const pulse = 0.55 + 0.45 * Math.sin(jeu.t * 4);
+    g.globalAlpha = pulse;
+    cta.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, '#ffcf5c'));
+    g.globalAlpha = 1;
+  }
 
   if (board.length) {
     const t = 'Record : ' + board[0].name + '  ' + board[0].score + ' orcs';
@@ -2078,6 +2179,7 @@ function loop(now) {
   if (jeu.etat === 'jeu') update(dt);
   else {
     jeu.t += dt;
+    if (jeu.etat === 'menu') jeu.menuT += dt;
     if (jeu.etat === 'fin') jeu.finCooldown = Math.max(0, jeu.finCooldown - dt);
     for (let i = jeu.particules.length - 1; i >= 0; i--) {
       const p = jeu.particules[i]; p.vie -= dt;
