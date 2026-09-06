@@ -73,8 +73,8 @@ const CONFIG = {
   // --- Rythme / difficulté ---
   LEVEL_DURATION: 30,      // secondes par niveau
   SPEED_BASE: 105,         // vitesse au niveau 1 (unités monde / s)
-  SPEED_GROWTH: 1.20,      // +20% par niveau
-  SPEED_CAP: 330,          // plafond de sécurité (met à 99999 pour l'enlever)
+  SPEED_GROWTH: 1.10,      // +10% par niveau : la partie doit pouvoir durer
+  SPEED_CAP: 320,          // plafond de sécurité (met à 99999 pour l'enlever)
 
   // --- Saut ---
   GRAVITY: 1400,
@@ -97,8 +97,8 @@ const CONFIG = {
   // --- Apparition des obstacles ---
   GAP_MIN: 1.55,           // écart entre obstacles, en secondes de course
   GAP_MAX: 2.35,
-  GAP_TIGHTEN: 0.07,       // l'écart se resserre de 7% par niveau
-  GAP_TIGHTEN_FLOOR: 0.52,
+  GAP_TIGHTEN: 0.045,      // l'écart se resserre un peu à chaque niveau
+  GAP_TIGHTEN_FLOOR: 0.50,
 
   // --- Donuts ---
   DONUT_VALUE: 1,
@@ -122,7 +122,7 @@ const PAL = {
   E:'#241826', Y:'#ffd23f', N:'#241826', G:'#d6ecff', V:'#ff8c3d',
   v:'#d9662a', L:'#c99b63', W:'#fdfbf5', R:'#e0405a', r:'#a32a42',
   C:'#7bd8c8', M:'#8b5fbf',
-  q:'#e0873f', Q:'#b9642a',                  // pelage du chat
+  q:'#9aa0ab', Q:'#6b7280',                  // chat tigre gris
 };
 
 // Construit un canvas depuis un tableau de strings. Largeur = ligne la plus longue.
@@ -352,13 +352,13 @@ function buildSprites() {
   const chatRows = [
     ' K K   K K  ',
     ' KqK   KqK  ',
-    'KqqqqqqqqqK ',
-    'KqEqqqqqEqK ',
-    'KqqqqRqqqqK ',
+    'KqQqQqQqqqK ',
+    'KqCqqqqqCqK ',
+    'KqqQqRqQqqK ',
     'KqqWWWWWqqK ',
-    ' KqqqqqqqK K',
-    ' KqqqqqqqKqK',
-    ' KqqqqqqqqqK',
+    ' KqQqqqQqK K',
+    ' KqqQqQqqKQK',
+    ' KqQqqqQqqqK',
     ' KKqqKKqqKK ',
     '  KK    KK  ',
   ];
@@ -704,7 +704,10 @@ function spawnObstacle() {
   choices.push({ kind: 'waspLow', w: 1 });
   choices.push({ kind: 'waspHigh', w: lv >= 2 ? 1 : 0.35 });
   if (lv >= 3) choices.push({ kind: 'doubleCanvasser', w: 0.8 });
+  if (lv >= 3) choices.push({ kind: 'essaim', w: 0.9 });          // mur de guêpes : double saut
+  if (lv >= 4) choices.push({ kind: 'stand', w: 0.8 });           // trop large pour un seul saut
   if (lv >= 4) choices.push({ kind: 'waspPair', w: 0.7 });
+  if (lv >= 5) choices.push({ kind: 'sauteur', w: 0.8 });         // démarcheur qui bondit
 
   const total = choices.reduce((s, c) => s + c.w, 0);
   let r = Math.random() * total, pick = choices[0];
@@ -715,13 +718,35 @@ function spawnObstacle() {
 
   if (pick.kind === 'canvasser') {
     push({ type: 'canvasser', x: X, y: groundY - 40, w: 32, h: 40, hb: [7, 4, 18, 36], t: rnd(0, 6) });
+
   } else if (pick.kind === 'doubleCanvasser') {
     push({ type: 'canvasser', x: X, y: groundY - 40, w: 32, h: 40, hb: [7, 4, 18, 36], t: rnd(0, 6) });
     push({ type: 'canvasser', x: X + 46, y: groundY - 40, w: 32, h: 40, hb: [7, 4, 18, 36], t: rnd(0, 6) });
+
+  } else if (pick.kind === 'sauteur') {
+    // Il bondit sur place : il faut lire son rythme avant de sauter
+    push({ type: 'canvasser', saute: true, x: X, y: groundY - 40, w: 32, h: 40,
+           hb: [7, 4, 18, 36], t: rnd(0, 6), amp: rnd(26, 34), rythme: rnd(1.9, 2.5) });
+
   } else if (pick.kind === 'waspLow') {
     push({ type: 'wasp', x: X, y: groundY - rnd(14, 30), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: rnd(3, 6) });
+
   } else if (pick.kind === 'waspHigh') {
     push({ type: 'wasp', x: X, y: groundY - rnd(96, 122), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: rnd(4, 8) });
+
+  } else if (pick.kind === 'essaim') {
+    // Colonne de guêpes : le saut simple plafonne à 104, il faut le second
+    for (const alt of [25, 65, 105]) {
+      push({ type: 'wasp', x: X + rnd(-3, 3), y: groundY - alt, w: 20, h: 16,
+             hb: [2, 3, 16, 10], t: rnd(0, 6), bob: 3 });
+    }
+
+  } else if (pick.kind === 'stand') {
+    // Largeur calée sur la vitesse : un saut simple couvre 0,77 s de course,
+    // le stand en occupe 0,9 s. Seul le double saut (1,22 s) passe.
+    const w = Math.round(game.speed * 0.9);
+    push({ type: 'stand', x: X, y: groundY - 40, w, h: 40, hb: [2, 6, w - 4, 34], t: rnd(0, 6) });
+
   } else {
     push({ type: 'wasp', x: X, y: groundY - rnd(16, 26), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: 4 });
     push({ type: 'wasp', x: X + rnd(50, 80), y: groundY - rnd(98, 120), w: 20, h: 16, hb: [2, 3, 16, 10], t: rnd(0, 6), bob: 6 });
@@ -907,6 +932,7 @@ function update(dt) {
     const o = game.obstacles[i];
     o.x -= dx; o.t += dt;
     if (o.type === 'wasp') o.yOff = Math.sin(o.t * 5) * o.bob;
+    else if (o.saute) o.yOff = -Math.abs(Math.sin(o.t * o.rythme)) * o.amp;
     if (o.x + o.w < -20) { game.obstacles.splice(i, 1); continue; }
     if (game.invuln > 0 || o.hitDone) continue;
 
@@ -1011,14 +1037,41 @@ function drawHero(g) {
   g.drawImage(spr, x, y);
 }
 
+function drawStand(g, o) {
+  const x = Math.round(o.x), y = Math.round(o.y), w = Math.round(o.w), h = Math.round(o.h);
+  g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x, groundY, w, 3);
+
+  // Banderole
+  g.fillStyle = '#d94a6a'; g.fillRect(x, y, w, 13);
+  g.fillStyle = '#b83a56'; g.fillRect(x, y + 10, w, 3);
+  g.fillStyle = '#fdfbf5';
+  for (let i = 4; i < w - 8; i += 11) g.fillRect(x + i, y + 4, 6, 3);
+
+  // Montants
+  g.fillStyle = '#3f3348';
+  g.fillRect(x + 2, y, 3, h); g.fillRect(x + w - 5, y, 3, h);
+
+  // Table et piles de tracts
+  g.fillStyle = '#8a6a45'; g.fillRect(x, y + h - 17, w, 6);
+  g.fillStyle = '#a8813f'; g.fillRect(x, y + h - 17, w, 2);
+  g.fillStyle = '#3f3348';
+  g.fillRect(x + 7, y + h - 11, 3, 11); g.fillRect(x + w - 10, y + h - 11, 3, 11);
+  g.fillStyle = '#fdfbf5';
+  for (let i = 9; i < w - 14; i += 19) g.fillRect(x + i, y + h - 21, 9, 4);
+}
+
 function drawObstacle(g, o) {
   const x = Math.round(o.x), y = Math.round(o.y + (o.yOff || 0));
+  if (o.type === 'stand') { drawStand(g, o); return; }
   if (o.type === 'wasp') {
     const f = Math.floor(o.t * 18) % 2;
     g.drawImage(SPR.wasp[f], x, y);
   } else {
     const f = Math.floor(o.t * 4) % 2;
-    g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(x + 6, groundY, 20, 3);
+    const haut = -(o.yOff || 0);
+    const larg = Math.max(10, 20 - haut * 0.25);
+    g.fillStyle = 'rgba(0,0,0,' + Math.max(0.08, 0.22 - haut * 0.004).toFixed(3) + ')';
+    g.fillRect(Math.round(x + 16 - larg / 2), groundY, Math.round(larg), 3);
     g.drawImage(SPR.canvasser[f], x, y);
     // Planchette agitée vers le joueur
     const wob = Math.sin(o.t * 7) * 2;
