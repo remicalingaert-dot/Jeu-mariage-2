@@ -1,0 +1,2205 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>La Comté de Rémi</title>
+<style>
+  :root{--sat:env(safe-area-inset-top,0px)}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{
+    height:100%;width:100%;background:#0d0a14;overflow:hidden;
+    position:fixed;overscroll-behavior:none;touch-action:none;
+    -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+  }
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
+
+  #nameBox{
+    position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+    display:none;flex-direction:column;gap:12px;align-items:center;
+    padding:20px 22px;background:#18220f;border:2px solid #8fc45a;
+    box-shadow:5px 5px 0 rgba(0,0,0,.6);z-index:10;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  #nameBox.on{display:flex}
+  #nameTitle{color:#ffd23f;font-size:13px;letter-spacing:.06em;text-align:center;line-height:1.5}
+  #nameSub{color:rgba(255,253,246,.6);font-size:11px;text-align:center;margin-top:-6px}
+  #nameInput{
+    width:190px;padding:9px 10px;background:#0d0a14;color:#fffdf6;
+    border:2px solid #8fc45a;outline:none;font:inherit;font-size:16px;
+    letter-spacing:.14em;text-align:center;text-transform:uppercase;
+  }
+  #nameInput:focus{border-color:#ffd23f}
+  #nameOk{
+    padding:9px 26px;background:#8fc45a;color:#18220f;border:none;
+    font:inherit;font-size:13px;font-weight:700;letter-spacing:.1em;
+    text-transform:uppercase;cursor:pointer;box-shadow:3px 3px 0 rgba(0,0,0,.5);
+  }
+  #nameOk:active{transform:translate(2px,2px);box-shadow:1px 1px 0 rgba(0,0,0,.5)}
+  #nameOk:focus-visible,#nameInput:focus-visible{outline:2px solid #ffd23f;outline-offset:2px}
+
+  #retour{
+    position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:20;
+    display:none;align-items:center;gap:6px;
+    padding:7px 12px;background:rgba(11,9,16,.82);border:2px solid #8fc45a;
+    color:#8fc45a;text-decoration:none;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  }
+  #retour.on{display:flex}
+  #retour:active{transform:translate(1px,1px)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<a id="retour" href="index.html">&lt; Rediaverse</a>
+<div id="nameBox">
+  <p id="nameTitle">Tu entres dans le top 5</p>
+  <p id="nameSub">Choisis ton pseudo</p>
+  <input id="nameInput" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Pseudo">
+  <button id="nameOk">Valider</button>
+</div>
+<script src="leaderboard.js"></script>
+<script>
+'use strict';
+
+/* ============================================================
+   LA COMTÉ DE RÉMI — survivor pixel art, portrait mobile
+   Tout se règle depuis CONFIG et depuis la table POUVOIRS.
+   ============================================================ */
+
+const CONFIG = {
+  // --- Monde (portrait téléphone) ---
+  WORLD_W: 260,
+  VH_MIN: 420, VH_MAX: 620,
+
+  // --- Rémi ---
+  PV_MAX: 100,
+  VITESSE: 62,
+  DEGATS_CONTACT: 10,
+  INVULN: 1.7,             // 0,7 s de base + 1 s ajoutee
+
+  // --- Esquive ---
+  DASH_DUREE: 0.18,
+  DASH_VITESSE: 4.6,       // multiplicateur de vitesse pendant l'élan
+  DASH_CD: 2.2,
+  DASH_GRACE: 0.12,        // invincibilité qui déborde un peu après l'élan
+
+  // --- Balrog ---
+  BALROG_DEPUIS: 4,        // première manche où il peut surgir
+  BALROG_PV: 20,           // multiplicateur de résistance
+  BALROG_TAILLE: 1.9,
+  BALROG_VITESSE: 0.55,
+  BALROG_DEGATS: 2,        // multiplicateur de dégâts au contact
+  BALROG_XP: 100,
+
+  // --- Expérience ---
+  XP_BASE: 10,             // niveau 1 -> 2
+  XP_CROISSANCE: 2,        // chaque niveau demande le double
+
+  // --- Manches ---
+  MANCHE_DUREE: 22,        // secondes d'étalement des apparitions
+  MANCHE_BASE: 6,          // ennemis à la manche 1
+  MANCHE_CROISSANCE: 2,    // chaque manche en fait apparaître le double
+  VIVANTS_MAX: 80,         // garde-fou : le budget reste doublé, il s'étale
+
+  // --- Orcs ---
+  ORC_PV: 3,
+  ORC_PV_BONUS: 1.5,       // toutes les N manches
+  ORC_PV_TOUS_LES: 3,
+  ORC_VITESSE: 34,
+
+  // --- Orcs élites ---
+  ELITE_DEPUIS: 3,         // première manche où ils apparaissent
+  ELITE_PV: 5,             // multiplicateur de résistance
+  ELITE_TAILLE: 1.3,
+  XP_PAR_ORC: 2,           // experience d'un orc classique
+  ELITE_XP: 20,            // une elite en rapporte 10 fois plus
+  ELITE_CHANCE: 0.08,      // proportion des apparitions à la manche 3
+  ELITE_CHANCE_PAR_MANCHE: 0.012,
+  ELITE_CHANCE_MAX: 0.20,
+};
+
+/* ============================================================
+   1. OUTILS PIXEL (mêmes conventions que Donut Run)
+   ============================================================ */
+
+const PAL = {
+  K:'#1c1410',
+  S:'#f0c096', D:'#cf9468',                 // peau
+  H:'#4a2f1c', B:'#5c3a22', b:'#6e4728',    // cheveux, barbe, moustache
+  T:'#5d8f4a', t:'#456b37',                 // tunique
+  P:'#6b4a2c', O:'#3a2718',                 // pantalon, bottes
+  w:'#a8813f',                              // bois de la fleche
+  I:'#c8ccd4', i:'#8f96a1',                 // acier de la hache
+  g:'#7d9c52', e:'#3f4d2a', a:'#2b3319',    // orc
+  A:'#4a3b2e', n:'#332619',                 // cuir
+  R:'#ff5069', W:'#fdfbf5', Y:'#ffcf5c', y:'#d99f30',
+  F:'#ff9a3d', f:'#e05a2a',
+  G:'#8fc45a', G2:'#6ea043',
+  M:'#b98fd6', C:'#7bd8c8',
+};
+
+function makeSprite(rows, scale = 1, palette = PAL) {
+  const w = Math.max(...rows.map(r => r.length));
+  const h = rows.length;
+  const cv = document.createElement('canvas');
+  cv.width = w * scale; cv.height = h * scale;
+  const g = cv.getContext('2d');
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < rows[y].length; x++) {
+      const ch = rows[y][x];
+      if (ch === ' ' || ch === '.') continue;
+      const col = palette[ch];
+      if (!col) continue;
+      g.fillStyle = col;
+      g.fillRect(x * scale, y * scale, scale, scale);
+    }
+  }
+  cv.pw = w * scale; cv.ph = h * scale;
+  return cv;
+}
+
+function flipSprite(src) {
+  const cv = document.createElement('canvas');
+  cv.width = src.width; cv.height = src.height;
+  const g = cv.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  g.translate(src.width, 0); g.scale(-1, 1);
+  g.drawImage(src, 0, 0);
+  cv.pw = src.pw; cv.ph = src.ph;
+  return cv;
+}
+
+/* --- Police bitmap 3x5 --- */
+const FONT = {
+  '0':['###','# #','# #','# #','###'], '1':[' # ','## ',' # ',' # ','###'],
+  '2':['###','  #','###','#  ','###'], '3':['###','  #','###','  #','###'],
+  '4':['# #','# #','###','  #','  #'], '5':['###','#  ','###','  #','###'],
+  '6':['###','#  ','###','# #','###'], '7':['###','  #','  #','  #','  #'],
+  '8':['###','# #','###','# #','###'], '9':['###','# #','###','  #','###'],
+  'A':['###','# #','###','# #','# #'], 'B':['## ','# #','## ','# #','## '],
+  'C':['###','#  ','#  ','#  ','###'], 'D':['## ','# #','# #','# #','## '],
+  'E':['###','#  ','###','#  ','###'], 'F':['###','#  ','###','#  ','#  '],
+  'G':['###','#  ','# #','# #','###'], 'H':['# #','# #','###','# #','# #'],
+  'I':['###',' # ',' # ',' # ','###'], 'J':['  #','  #','  #','# #','###'],
+  'K':['# #','# #','## ','# #','# #'], 'L':['#  ','#  ','#  ','#  ','###'],
+  'M':['# #','###','# #','# #','# #'], 'N':['## ','# #','# #','# #','# #'],
+  'O':['###','# #','# #','# #','###'], 'P':['###','# #','###','#  ','#  '],
+  'Q':['###','# #','# #','###','  #'], 'R':['###','# #','###','## ','# #'],
+  'S':['###','#  ','###','  #','###'], 'T':['###',' # ',' # ',' # ',' # '],
+  'U':['# #','# #','# #','# #','###'], 'V':['# #','# #','# #','# #',' # '],
+  'W':['# #','# #','# #','###','# #'], 'X':['# #','# #',' # ','# #','# #'],
+  'Y':['# #','# #',' # ',' # ',' # '], 'Z':['###','  #',' # ','#  ','###'],
+  ' ':['   ','   ','   ','   ','   '], '.':['   ','   ','   ','   ',' # '],
+  ',':['   ','   ','   ',' # ','#  '], '!':[' # ',' # ',' # ','   ',' # '],
+  '?':['###','  #',' ##','   ',' # '], ':':['   ',' # ','   ',' # ','   '],
+  '-':['   ','   ','###','   ','   '], '+':['   ',' # ','###',' # ','   '],
+  '=':['   ','###','   ','###','   '], '*':['# #',' # ','###',' # ','# #'],
+  '/':['  #','  #',' # ','#  ','#  '], "'":[' # ',' # ','   ','   ','   '],
+  '(':[' ##',' # ',' # ',' # ',' ##'], ')':['## ','  #','  #','  #','## '],
+  '<':['  #',' # ','#  ',' # ','  #'], '>':['#  ',' # ','  #',' # ','#  '],
+  '#':['# #','###','# #','###','# #'], '%':['# #','  #',' # ','#  ','# #'],
+};
+
+const stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const textWidth = (str, scale = 1, sp = 1) => stripAccents(String(str)).length * (3 + sp) * scale - sp * scale;
+
+function drawText(g, str, x, y, scale, color, sp = 1) {
+  str = stripAccents(String(str)).toUpperCase();
+  g.fillStyle = color;
+  let cx = Math.round(x);
+  for (const ch of str) {
+    const glyph = FONT[ch] || FONT['?'];
+    for (let r = 0; r < 5; r++) {
+      for (let c = 0; c < 3; c++) {
+        if (glyph[r][c] === '#') g.fillRect(cx + c * scale, Math.round(y) + r * scale, scale, scale);
+      }
+    }
+    cx += (3 + sp) * scale;
+  }
+}
+const drawTextCentered = (g, s, cx, y, sc, col, sp = 1) => drawText(g, s, cx - textWidth(s, sc, sp) / 2, y, sc, col, sp);
+
+function wrapText(str, maxW, scale = 1, sp = 1) {
+  const words = [];
+  for (const w of String(str).split(' ')) {
+    if (words.length && /^[:;!?»]+$/.test(w)) words[words.length - 1] += ' ' + w;
+    else words.push(w);
+  }
+  const lines = []; let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (!cur || textWidth(test, scale, sp) <= maxW) cur = test;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/* ============================================================
+   2. SPRITES (placeholders — remplaçables par tes PNG)
+   ============================================================ */
+
+const REMI_HAUT = [
+  '     KKKKK      ',
+  '    KHHHHHK     ',
+  '   KHHHHHHHK    ',
+  '   KHSSSSSHK    ',
+  '   KHSKSSKSK    ',
+  '   KHSbbbbSK    ',
+  '   KBbbSbbBK    ',
+  '   KBBSSSBBK    ',
+  '    KBBBBBK     ',
+  '     KBBBK      ',
+  '   KKTTTTTKK    ',
+  '  KSTTTTTTTSK   ',
+  '  KSTTTTTTTSK   ',
+  '  KKTTTTTTTKK   ',
+  '   KTTTTTTTK    ',
+  '   KtttttttK    ',
+];
+const REMI_JAMBES_A = [
+  '   KPPPPPPK     ',
+  '   KPPPPPPK     ',
+  '   KPPK KPPK    ',
+  '   KPK   KPK    ',
+  '  KOOK   KOOK   ',
+  '   KK     KK    ',
+];
+const REMI_JAMBES_B = [
+  '   KPPPPPPK     ',
+  '   KPPPPPPK     ',
+  '    KPPPPK      ',
+  '    KPPPPK      ',
+  '   KOOOOOK      ',
+  '    KKKK        ',
+];
+const REMI_JAMBES_C = [
+  '   KPPPPPPK     ',
+  '   KPPPPPPK     ',
+  '  KPPK  KPPK    ',
+  '  KPK    KPK    ',
+  ' KOOK    KOOK   ',
+  '  KK      KK    ',
+];
+
+const ORC_HAUT = [
+  '    KKKKK     ',
+  '   KeeeeeK    ',
+  '  KeggggggK   ',
+  '  KgRggRggK   ',
+  '  KggggggggK  ',
+  '  KgWgggWgK   ',
+  '   KggggK     ',
+  '  KAAAAAAK    ',
+  ' KgAAAAAAgK   ',
+  ' KgAAAAAAgK   ',
+  ' KKAAAAAAKK   ',
+  '   KnnnnK     ',
+];
+const ORC_JAMBES_A = [
+  '   KggggK     ',
+  '   KgKKgK     ',
+  '   KgK KgK    ',
+  '  KeeK KeeK   ',
+];
+const ORC_JAMBES_B = [
+  '   KggggK     ',
+  '   KggggK     ',
+  '    KggK      ',
+  '   KeeeeK     ',
+];
+
+const BALROG = [
+  '   z     z    ',
+  '  zz     zz   ',
+  '  zzzzzzzzz   ',
+  ' zzRzzzzzRzz  ',
+  ' zzzzFFFzzzz  ',
+  '  zzzzzzzzz   ',
+  ' zzzzzzzzzzz  ',
+  'zzFzzzzzzzFzz ',
+  'zzzzzzzzzzzzz ',
+  'zzzFzzzzzFzzz ',
+  ' zzzzzzzzzzz  ',
+  ' zzzzzzzzzzz  ',
+  '  zzz   zzz   ',
+  '  zFz   zFz   ',
+  '  zzz   zzz   ',
+  ' zzzz   zzzz  ',
+  '  zz     zz   ',
+];
+
+const SPR = {};
+function buildSprites() {
+  const mk = (haut, jambes) => makeSprite(haut.concat(jambes), 1);
+
+  const rD = [mk(REMI_HAUT, REMI_JAMBES_A), mk(REMI_HAUT, REMI_JAMBES_B),
+              mk(REMI_HAUT, REMI_JAMBES_C), mk(REMI_HAUT, REMI_JAMBES_B)];
+  SPR.remi = { d: rD, g: rD.map(flipSprite) };
+
+  const oD = [mk(ORC_HAUT, ORC_JAMBES_A), mk(ORC_HAUT, ORC_JAMBES_B)];
+  SPR.orc = { d: oD, g: oD.map(flipSprite) };
+
+  // Élites : même sprite agrandi une fois pour toutes
+  const agrandir = src => {
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(src.width * CONFIG.ELITE_TAILLE);
+    cv.height = Math.round(src.height * CONFIG.ELITE_TAILLE);
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(src, 0, 0, cv.width, cv.height);
+    cv.pw = cv.width; cv.ph = cv.height;
+    return cv;
+  };
+  SPR.elite = { d: oD.map(agrandir), g: oD.map(flipSprite).map(agrandir) };
+
+  const bal = makeSprite(BALROG, 1);
+  const grandir = (src, f) => {
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(src.width * f); cv.height = Math.round(src.height * f);
+    const g = cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.drawImage(src, 0, 0, cv.width, cv.height);
+    cv.pw = cv.width; cv.ph = cv.height;
+    return cv;
+  };
+  const balD = grandir(bal, CONFIG.BALROG_TAILLE);
+  SPR.balrog = { d: [balD, balD], g: [flipSprite(balD), flipSprite(balD)] };
+
+  SPR.hache = makeSprite([
+    ' KKKKK ',
+    'KIiiiIK',
+    'KIiiiIK',
+    ' KIiiK ',
+    '  KwK  ',
+    '  KwK  ',
+    '  KKK  ',
+  ], 1);
+
+  SPR.caillou = makeSprite([
+    ' KK ',
+    'KDDK',
+    'KDDK',
+    ' KK ',
+  ], 1);
+
+  // Flèche pointant vers la droite, pivotée au rendu
+  SPR.fleche = makeSprite([
+    'W        K  ',
+    ' W     KKKK ',
+    'WWwwwwwwwwK ',
+    ' W     KKKK ',
+    'W        K  ',
+  ], 1);
+
+  SPR.doigt = makeSprite([
+    '   KK    ',
+    '  KSSK   ',
+    '  KSSK   ',
+    '  KSSK   ',
+    'K KSSK  K',
+    ' KSSSSSK ',
+    'KSSSSSSSK',
+    'KSSSSSSSK',
+    ' KSSSSSK ',
+    '  KKKKK  ',
+  ], 1);
+
+  SPR.esquive = makeSprite([
+    '  C   C  ',
+    '  CC  CC ',
+    'CCCCCCCCC',
+    '  CC  CC ',
+    '  C   C  ',
+  ], 1, Object.assign({}, PAL, { C: '#7bd8c8' }));
+
+  SPR.etincelle = makeSprite([
+    '    M    ',
+    '  M M M  ',
+    '   MMM   ',
+    'MMMMMMMMM',
+    '   MMM   ',
+    '  M M M  ',
+    '    M    ',
+  ], 1, Object.assign({}, PAL, { M: '#b98fd6' }));
+
+  SPR.coeur = makeSprite([
+    ' RR RR ',
+    'RRRRRRR',
+    ' RRRRR ',
+    '  RRR  ',
+    '   R   ',
+  ], 1);
+}
+
+/* ============================================================
+   3. CANVAS
+   ============================================================ */
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+let VW = CONFIG.WORLD_W, VH = 480, hudTop = 8, viewScale = 1;
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  VW = CONFIG.WORLD_W;
+  VH = Math.round(Math.min(CONFIG.VH_MAX, Math.max(CONFIG.VH_MIN, VW / (w / h))));
+
+  const scale = Math.min(w / VW, h / VH);
+  viewScale = scale;
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const px = Math.max(1, Math.floor(scale * dpr));
+
+  canvas.width = VW * px;
+  canvas.height = VH * px;
+  canvas.style.width = (VW * scale) + 'px';
+  canvas.style.height = (VH * scale) + 'px';
+  ctx.setTransform(px, 0, 0, px, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+
+  const gapTop = (h - VH * scale) / 2;
+  const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sat')) || 0;
+  hudTop = 8 + Math.max(0, Math.round((inset - gapTop) / scale));
+
+  BOUTON_DASH.x = VW - 34;
+  BOUTON_DASH.y = VH - 40;
+
+  buildArene();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+
+const rnd = (a, b) => a + Math.random() * (b - a);
+const rndi = (a, b) => Math.floor(rnd(a, b + 1));
+const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
+
+/* ============================================================
+   4. L'ARÈNE (la Comté)
+   ============================================================ */
+
+let murs = [];
+let solCanvas = null;
+const HUD_H = 46;   // bandeau réservé en haut
+
+function buildArene() {
+  const top = hudTop + HUD_H;
+
+  // Murs : la butte du hobbit, des haies et des barrières de bois
+  const W = VW, H = VH;
+  murs = [
+    { x: W / 2 - 48, y: top + 48, w: 96, h: 30, type: 'maison' },
+    { x: W - 92, y: top + 112, w: 70, h: 12, type: 'haie' },
+    { x: 40, y: H * 0.52, w: 12, h: 68, type: 'bois' },
+    { x: W - 56, y: H * 0.46, w: 12, h: 74, type: 'bois' },
+    { x: W / 2 - 34, y: H * 0.70, w: 68, h: 12, type: 'haie' },
+    { x: 24, y: H - 92, w: 54, h: 12, type: 'bois' },
+    { x: W - 78, y: H - 74, w: 54, h: 12, type: 'haie' },
+  ].map(m => ({ ...m, x: Math.round(m.x), y: Math.round(m.y) }));
+
+  // Sol dessiné une seule fois puis réutilisé
+  solCanvas = document.createElement('canvas');
+  solCanvas.width = VW; solCanvas.height = VH;
+  const g = solCanvas.getContext('2d');
+
+  g.fillStyle = '#6d9c46'; g.fillRect(0, 0, VW, VH);
+
+  // Vallons : bandes plus claires et plus sombres
+  for (let i = 0; i < 26; i++) {
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.045)';
+    const bw = rndi(40, 120), bh = rndi(16, 40);
+    g.fillRect(rndi(-20, VW), rndi(-10, VH), bw, bh);
+  }
+
+  // Sentier de terre en diagonale douce
+  g.fillStyle = '#b79b6a';
+  for (let y = 0; y < VH; y += 2) {
+    const cx = VW * 0.5 + Math.sin(y * 0.014) * VW * 0.24;
+    g.fillRect(Math.round(cx - 13), y, 26, 2);
+  }
+  g.fillStyle = 'rgba(0,0,0,0.07)';
+  for (let y = 0; y < VH; y += 2) {
+    const cx = VW * 0.5 + Math.sin(y * 0.014) * VW * 0.24;
+    g.fillRect(Math.round(cx - 13), y, 3, 2);
+    g.fillRect(Math.round(cx + 10), y, 3, 2);
+  }
+
+  // Touffes d'herbe
+  for (let i = 0; i < 240; i++) {
+    const x = rndi(0, VW), y = rndi(0, VH);
+    g.fillStyle = Math.random() < 0.5 ? '#5d8a3b' : '#7fae53';
+    g.fillRect(x, y, 2, 1);
+    g.fillRect(x + 1, y - 1, 1, 1);
+  }
+
+  // Fleurs
+  const teintes = ['#f5e05c', '#f2f2ee', '#e88fb0', '#c8a6e8'];
+  for (let i = 0; i < 60; i++) {
+    const x = rndi(4, VW - 5), y = rndi(4, VH - 5);
+    g.fillStyle = teintes[rndi(0, teintes.length - 1)];
+    g.fillRect(x, y, 2, 2);
+    g.fillStyle = '#4e7a33';
+    g.fillRect(x, y + 2, 1, 2);
+  }
+}
+
+function drawMaison(g, m) {
+  const cx = m.x + m.w / 2, base = m.y + m.h;
+
+  // L'arbre d'abord : la butte viendra masquer le pied du tronc
+  const tx = cx + 5, ty = m.y - 24;
+  g.fillStyle = '#4a3524';
+  g.fillRect(Math.round(tx - 2), Math.round(ty), 4, 34);
+  g.fillRect(Math.round(tx - 7), Math.round(ty + 7), 5, 2);
+  g.fillRect(Math.round(tx + 2), Math.round(ty + 3), 6, 2);
+  const feuillage = [[0, -8, 15], [-13, -3, 11], [13, -4, 11], [-6, -16, 10], [8, -15, 10]];
+  g.fillStyle = '#28582a';
+  for (const [dx, dy, r] of feuillage) { g.beginPath(); g.arc(tx + dx, ty + dy, r, 0, 7); g.fill(); }
+  g.fillStyle = '#3d8039';
+  for (const [dx, dy, r] of feuillage) { g.beginPath(); g.arc(tx + dx - 2, ty + dy - 3, r * 0.68, 0, 7); g.fill(); }
+
+  // La butte, en trois couches de vert
+  g.fillStyle = '#3f6b2c';
+  g.beginPath(); g.ellipse(cx, base, m.w / 2 + 9, 38, 0, Math.PI, 0); g.fill();
+  g.fillStyle = '#4e7a33';
+  g.beginPath(); g.ellipse(cx, base, m.w / 2 + 4, 32, 0, Math.PI, 0); g.fill();
+  g.fillStyle = '#639543';
+  g.beginPath(); g.ellipse(cx, base - 1, m.w / 2 - 8, 22, 0, Math.PI, 0); g.fill();
+
+  // Fenêtres rondes
+  for (const ox of [-32, 32]) {
+    g.fillStyle = '#7d5230'; g.beginPath(); g.arc(cx + ox, base - 17, 8, 0, 7); g.fill();
+    g.fillStyle = '#f2e3a6'; g.beginPath(); g.arc(cx + ox, base - 17, 6, 0, 7); g.fill();
+    g.fillStyle = '#7d5230';
+    g.fillRect(Math.round(cx + ox - 6), Math.round(base - 18), 12, 1);
+    g.fillRect(Math.round(cx + ox), Math.round(base - 23), 1, 12);
+  }
+
+  // La porte ronde, avec son encadrement de brique
+  const dy = base - 14;
+  g.fillStyle = '#8a5230'; g.beginPath(); g.arc(cx, dy, 16, 0, 7); g.fill();
+  g.fillStyle = '#b5764a'; g.beginPath(); g.arc(cx, dy, 14, 0, 7); g.fill();
+  g.fillStyle = '#6f4326';
+  for (let a = Math.PI; a <= Math.PI * 2 + 0.1; a += 0.42) {
+    g.fillRect(Math.round(cx + Math.cos(a) * 15 - 1), Math.round(dy + Math.sin(a) * 15 - 1), 2, 2);
+  }
+  g.fillStyle = '#2e7a3c'; g.beginPath(); g.arc(cx, dy, 11, 0, 7); g.fill();
+  g.fillStyle = '#25652f';
+  g.fillRect(Math.round(cx - 11), Math.round(dy - 1), 22, 1);
+  g.fillRect(Math.round(cx - 1), Math.round(dy - 11), 1, 22);
+  g.fillStyle = '#e8c65e'; g.fillRect(Math.round(cx + 5), Math.round(dy), 2, 2);
+
+  // Massif de fleurs au pied de la butte
+  const teintes = ['#f5e05c', '#f2f2ee', '#e88fb0', '#e0873f'];
+  for (let i = 0; i < 16; i++) {
+    const fx = cx - m.w / 2 - 4 + (i * 7) % (m.w + 8);
+    const fy = base - 2 - ((i * 5) % 6);
+    g.fillStyle = '#3f6b2c'; g.fillRect(Math.round(fx), Math.round(fy + 2), 1, 2);
+    g.fillStyle = teintes[i % teintes.length];
+    g.fillRect(Math.round(fx), Math.round(fy), 2, 2);
+  }
+}
+
+function drawBarriere(g, m) {
+  const bois = '#a8813f', clair = '#c19a55', sombre = '#7a5a2a', trait = '#3a2718';
+  if (m.w >= m.h) {
+    // Barrière horizontale : poteaux verticaux, deux lisses
+    g.fillStyle = sombre; g.fillRect(m.x, m.y + m.h - 2, m.w, 2);
+    g.fillStyle = bois;
+    g.fillRect(m.x, m.y + 2, m.w, 3);
+    g.fillRect(m.x, m.y + 7, m.w, 3);
+    g.fillStyle = clair;
+    g.fillRect(m.x, m.y + 2, m.w, 1);
+    g.fillRect(m.x, m.y + 7, m.w, 1);
+    for (let x = m.x + 1; x < m.x + m.w - 2; x += 13) {
+      g.fillStyle = trait; g.fillRect(x, m.y, 4, m.h);
+      g.fillStyle = bois; g.fillRect(x, m.y, 3, m.h - 1);
+      g.fillStyle = clair; g.fillRect(x, m.y, 1, m.h - 1);
+    }
+  } else {
+    // Barrière verticale
+    g.fillStyle = sombre; g.fillRect(m.x + m.w - 2, m.y, 2, m.h);
+    g.fillStyle = bois;
+    g.fillRect(m.x + 2, m.y, 3, m.h);
+    g.fillRect(m.x + 7, m.y, 3, m.h);
+    g.fillStyle = clair;
+    g.fillRect(m.x + 2, m.y, 1, m.h);
+    g.fillRect(m.x + 7, m.y, 1, m.h);
+    for (let y = m.y + 1; y < m.y + m.h - 2; y += 13) {
+      g.fillStyle = trait; g.fillRect(m.x, y, m.w, 4);
+      g.fillStyle = bois; g.fillRect(m.x, y, m.w - 1, 3);
+      g.fillStyle = clair; g.fillRect(m.x, y, m.w - 1, 1);
+    }
+  }
+}
+
+function drawMur(g, m) {
+  if (m.type === 'maison') { drawMaison(g, m); return; }
+  if (m.type === 'bois') { drawBarriere(g, m); return; }
+  g.fillStyle = '#2f5c2a'; g.fillRect(m.x, m.y, m.w, m.h);
+  g.fillStyle = '#4a8a3c'; g.fillRect(m.x, m.y, m.w, m.h - 4);
+  g.fillStyle = '#63a84c'; g.fillRect(m.x, m.y, m.w, 3);
+  g.fillStyle = 'rgba(0,0,0,0.18)';
+  for (let x = m.x + 2; x < m.x + m.w - 1; x += 5) g.fillRect(x, m.y + 4, 1, m.h - 6);
+}
+
+/* --- Collision cercle / rectangle --- */
+function resoudreMurs(e, r) {
+  for (const m of murs) {
+    const cx = Math.max(m.x, Math.min(e.x, m.x + m.w));
+    const cy = Math.max(m.y, Math.min(e.y, m.y + m.h));
+    const dx = e.x - cx, dy = e.y - cy;
+    const d2 = dx * dx + dy * dy;
+    if (d2 >= r * r) continue;
+    if (d2 > 0.0001) {
+      const d = Math.sqrt(d2);
+      e.x = cx + (dx / d) * r;
+      e.y = cy + (dy / d) * r;
+    } else {
+      // Centre à l'intérieur : on ressort par le côté le plus proche
+      const gauche = e.x - m.x, droite = m.x + m.w - e.x;
+      const haut = e.y - m.y, bas = m.y + m.h - e.y;
+      const min = Math.min(gauche, droite, haut, bas);
+      if (min === gauche) e.x = m.x - r;
+      else if (min === droite) e.x = m.x + m.w + r;
+      else if (min === haut) e.y = m.y - r;
+      else e.y = m.y + m.h + r;
+    }
+  }
+}
+
+function pointDansMur(x, y, marge) {
+  return murs.some(m => x > m.x - marge && x < m.x + m.w + marge && y > m.y - marge && y < m.y + m.h + marge);
+}
+
+/* ============================================================
+   5. SON
+   ============================================================ */
+
+let audioCtx = null, muted = false;
+function initAudio() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (audioCtx && audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch (e) {} }
+}
+function beep(freq, dur, type = 'square', vol = 0.10, slideTo = null) {
+  if (!audioCtx || muted) return;
+  const o = audioCtx.createOscillator(), gn = audioCtx.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, audioCtx.currentTime + dur);
+  gn.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gn.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+  o.connect(gn); gn.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime + dur + 0.02);
+}
+function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
+const SFX = {
+  coup:    () => beep(rnd(150, 190), 0.05, 'square', 0.05),
+  mort:    () => beep(rnd(90, 120), 0.10, 'sawtooth', 0.06, 55),
+  touche:  () => { beep(180, 0.22, 'sawtooth', 0.13, 60); buzz(45); },
+  niveau:  () => { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => beep(f, 0.11, 'square', 0.09), i * 70)); },
+  choix:   () => beep(880, 0.08, 'triangle', 0.10, 1200),
+  manche:  () => { [392, 523].forEach((f, i) => setTimeout(() => beep(f, 0.14, 'square', 0.08), i * 110)); },
+  fin:     () => { [440, 349, 262, 175].forEach((f, i) => setTimeout(() => beep(f, 0.26, 'square', 0.11), i * 160)); },
+};
+
+/* ============================================================
+   6. POUVOIRS
+   Chaque entrée : rareté (poids du tirage) et 5 niveaux de puissance.
+   ============================================================ */
+
+const RARETES = {
+  commun:     { poids: 5, couleur: '#cfd6c4', nom: 'Commun' },
+  rare:       { poids: 3, couleur: '#6fb6e8', nom: 'Rare' },
+  epique:     { poids: 2, couleur: '#b98fd6', nom: 'Epique' },
+  legendaire: { poids: 1, couleur: '#ffcf5c', nom: 'Legendaire' },
+};
+
+const POUVOIRS = {
+  arc: {
+    nom: 'Arc de la Foret Noire', rarete: 'commun', arme: true,
+    desc: 'Vise seul l orc le plus proche. Traverse au niveau 2, revient en boomerang au niveau 3',
+    niveaux: [
+      { delai: 1.10, nb: 1, degats: 5, perce: 0, retour: false, ecart: 0 },
+      { delai: 0.92, nb: 1, degats: 7, perce: 2, retour: false, ecart: 0 },
+      { delai: 0.78, nb: 1, degats: 9, perce: 3, retour: true, ecart: 0 },
+      { delai: 0.65, nb: 2, degats: 12, perce: 4, retour: true, ecart: 0.22 },
+    ],
+  },
+  fendoir: {
+    nom: 'Hache de bucheron', rarete: 'commun', arme: true,
+    desc: 'Un coup devant Remi, puis un coup dans son dos dans la foulee',
+    niveaux: [
+      { delai: 1.10, degats: 6, rayon: 30, ouverture: 1.20, retard: 0.24 },
+      { delai: 0.92, degats: 9, rayon: 35, ouverture: 1.30, retard: 0.21 },
+      { delai: 0.76, degats: 13, rayon: 40, ouverture: 1.42, retard: 0.18 },
+      { delai: 0.62, degats: 18, rayon: 46, ouverture: 1.55, retard: 0.16 },
+    ],
+  },
+  haches: {
+    nom: 'Hache de la Moria', rarete: 'commun', arme: true,
+    desc: 'Des haches naines tournent autour de Remi et tranchent ce qu elles frolent',
+    niveaux: [
+      { nb: 2, degats: 2, rayon: 27, vitesse: 2.3 },
+      { nb: 3, degats: 3, rayon: 30, vitesse: 2.5 },
+      { nb: 4, degats: 5, rayon: 33, vitesse: 2.8 },
+      { nb: 6, degats: 7, rayon: 37, vitesse: 3.1 },
+    ],
+  },
+  pipe: {
+    nom: 'Fumee de pipe', rarete: 'rare', arme: true,
+    desc: 'Un nuage epais blesse tout ce qui s approche de trop pres',
+    niveaux: [
+      { rayon: 36, degats: 3, delai: 0.90 },
+      { rayon: 45, degats: 5, delai: 0.85 },
+      { rayon: 55, degats: 7, delai: 0.78 },
+      { rayon: 66, degats: 10, delai: 0.70 },
+    ],
+  },
+  cri: {
+    nom: 'Cri du Nazgul', rarete: 'rare', arme: true,
+    desc: 'Un hurlement glacant : les orcs alentour prennent la fuite',
+    niveaux: [
+      { delai: 2.0, rayon: 58, duree: 0.8 },
+      { delai: 2.0, rayon: 76, duree: 0.9 },
+      { delai: 2.0, rayon: 95, duree: 1.0 },
+      { delai: 2.0, rayon: 118, duree: 1.2 },
+    ],
+  },
+  balrog: {
+    nom: 'Souffle du Balrog', rarete: 'epique', arme: true,
+    desc: 'L esquive laisse un sillage de braises et brule ce qu elle traverse',
+    niveaux: [
+      { degats: 10, rayon: 20, duree: 0.5 },
+      { degats: 16, rayon: 24, duree: 0.7 },
+      { degats: 24, rayon: 28, duree: 0.9 },
+      { degats: 34, rayon: 33, duree: 1.2 },
+    ],
+  },
+  bottes: {
+    nom: 'Pieds de hobbit', rarete: 'commun',
+    desc: 'Remi se deplace plus vite et son esquive recharge plus tot',
+    niveaux: [{ v: 0.10, cd: 0.10 }, { v: 0.20, cd: 0.18 }, { v: 0.30, cd: 0.26 }, { v: 0.42, cd: 0.34 }],
+  },
+  force: {
+    nom: 'Bras de fermier', rarete: 'rare',
+    desc: 'Tous les degats augmentent',
+    niveaux: [{ d: 0.15 }, { d: 0.32 }, { d: 0.50 }, { d: 0.72 }],
+  },
+  cadence: {
+    nom: 'Second petit dejeuner', rarete: 'rare',
+    desc: 'Les pouvoirs se declenchent plus souvent',
+    niveaux: [{ c: 0.10 }, { c: 0.20 }, { c: 0.29 }, { c: 0.38 }],
+  },
+  appetit: {
+    nom: 'Bon appetit', rarete: 'rare', soigne: true,
+    desc: 'Augmente les PV max et rend des PV tout de suite',
+    niveaux: [{ pv: 20, soin: 30 }, { pv: 40, soin: 35 }, { pv: 60, soin: 40 }, { pv: 85, soin: 50 }],
+  },
+  pates: {
+    nom: 'La puissance des pates', rarete: 'epique',
+    desc: 'Remi recupere une part des degats qu il inflige',
+    niveaux: [{ vol: 0.05 }, { vol: 0.09 }, { vol: 0.14 }, { vol: 0.20 }],
+  },
+};
+
+/* --- Synergies : deux pouvoirs qui se repondent --- */
+const SYNERGIES = [
+  { id: 'fournaise', cles: ['pipe', 'balrog'], seuil: 2,
+    nom: 'Fournaise de Khazad-dum',
+    desc: 'La fumee s enflamme : +60% de degats, et le sillage de braises brule les orcs' },
+  { id: 'volee', cles: ['arc', 'cri'], seuil: 2,
+    nom: 'Volee de la Foret Noire',
+    desc: 'Chaque fleche qui touche fait detaler sa cible' },
+  { id: 'forge', cles: ['fendoir', 'haches'], seuil: 2,
+    nom: 'Forge de Durin',
+    desc: 'La hache frappe 30% plus loin et les lames orbitales tournent plus vite' },
+];
+
+function synergie(id) {
+  const s = SYNERGIES.find(x => x.id === id);
+  return !!s && s.cles.every(c => niveauDe(c) >= s.seuil);
+}
+function synergiesActives() { return SYNERGIES.filter(s => synergie(s.id)); }
+
+const MAX_NIVEAU_POUVOIR = 4;
+const REPOS_PEUR = 0.9;   // secondes de sang-froid entre deux paniques
+
+function niveauDe(cle) { return jeu.pouvoirs[cle] || 0; }
+function statsDe(cle) {
+  const n = niveauDe(cle);
+  return n ? POUVOIRS[cle].niveaux[n - 1] : null;
+}
+
+// Bonus passifs agrégés
+function bonusDegats() { const s = statsDe('force'); return 1 + (s ? s.d : 0); }
+function bonusCadence() { const s = statsDe('cadence'); return 1 - (s ? s.c : 0); }
+function bonusVitesse() { const s = statsDe('bottes'); return 1 + (s ? s.v : 0); }
+function reductionDegats() { return 1; }   // plus de reduction depuis le retrait du mithril
+function volDeVie() { const s = statsDe('pates'); return s ? s.vol : 0; }
+
+function tirerChoix() {
+  const dispo = Object.keys(POUVOIRS).filter(c => niveauDe(c) < MAX_NIVEAU_POUVOIR);
+  const choix = [];
+  const pool = dispo.slice();
+  while (choix.length < 3 && pool.length) {
+    const total = pool.reduce((s, c) => s + RARETES[POUVOIRS[c].rarete].poids, 0);
+    let r = Math.random() * total, pick = pool[0];
+    for (const c of pool) { r -= RARETES[POUVOIRS[c].rarete].poids; if (r <= 0) { pick = c; break; } }
+    choix.push(pick);
+    pool.splice(pool.indexOf(pick), 1);
+  }
+  return choix;
+}
+
+function appliquerPouvoir(cle) {
+  const avantSyn = synergiesActives().map(x => x.id);
+  const avant = niveauDe(cle);
+  jeu.pouvoirs[cle] = avant + 1;
+  const s = statsDe(cle);
+  if (POUVOIRS[cle].soigne) {
+    // Le seul moyen de récupérer des PV
+    jeu.pvMax = CONFIG.PV_MAX + s.pv;
+    jeu.pv = Math.min(jeu.pvMax, jeu.pv + s.soin);
+    jeu.flotteurs.push({ x: joueur.x, y: joueur.y - 20, txt: '+' + s.soin, vie: 1.2, c: '#8fc45a' });
+  }
+  if (cle === 'haches') construireHaches();
+
+  const nouvelle = synergiesActives().find(x => avantSyn.indexOf(x.id) === -1);
+  if (nouvelle) {
+    jeu.synergieBanniere = { nom: nouvelle.nom, t: 3.2 };
+    [523, 659, 784, 1046, 1318].forEach((f, i) => setTimeout(() => beep(f, 0.13, 'triangle', 0.10), i * 80));
+  }
+}
+
+/* ============================================================
+   7. ÉTAT
+   ============================================================ */
+
+const joueur = {
+  x: 0, y: 0, vx: 0, vy: 0, r: 6, dir: 1, anim: 0, frame: 0, ax: 1, ay: 0,
+  dashT: 0, dashCd: 0, dashInv: 0, ddx: 1, ddy: 0, dashTouches: [],
+};
+const BOUTON_DASH = { x: 0, y: 0, r: 24 };
+
+const jeu = {
+  etat: 'menu',                  // menu | jeu | niveau | fin
+  t: 0, temps: 0,
+  pv: CONFIG.PV_MAX, pvMax: CONFIG.PV_MAX, invuln: 0,
+  niveau: 1, xp: 0, xpNeed: CONFIG.XP_BASE,
+  manche: 1, budget: 0, restant: 0, delaiSpawn: 0, banniere: 0, balrogFait: true,
+  menuT: 0,
+  tues: 0,
+  pouvoirs: {},
+  orcs: [], projectiles: [], haches: [], effets: [], particules: [], flotteurs: [],
+  cartes: [], carteChoisie: null, boutonValider: null, synergieBanniere: null,
+  secousse: 0, flash: 0, volCumul: 0, differes: [],
+  minuteurs: {},
+  attenteNom: false, monRang: -1, finCooldown: 0,
+};
+
+function construireHaches() {
+  const s = statsDe('haches');
+  jeu.haches = [];
+  if (!s) return;
+  for (let i = 0; i < s.nb; i++) jeu.haches.push({ a: (i / s.nb) * Math.PI * 2, cd: {} });
+}
+
+function reset() {
+  jeu.t = 0; jeu.temps = 0;
+  jeu.pv = CONFIG.PV_MAX; jeu.pvMax = CONFIG.PV_MAX; jeu.invuln = 0;
+  jeu.niveau = 1; jeu.xp = 0; jeu.xpNeed = CONFIG.XP_BASE;
+  jeu.manche = 1; jeu.tues = 0; jeu.banniere = 0;
+  jeu.pouvoirs = {};
+  jeu.orcs = []; jeu.projectiles = []; jeu.haches = []; jeu.effets = []; jeu.particules = []; jeu.flotteurs = [];
+  jeu.cartes = []; jeu.carteChoisie = null; jeu.boutonValider = null; jeu.synergieBanniere = null;
+  jeu.secousse = 0; jeu.flash = 0; jeu.volCumul = 0; jeu.differes = [];
+  jeu.minuteurs = {};
+  jeu.attenteNom = false; jeu.monRang = -1; jeu.finCooldown = 0;
+
+  joueur.x = VW / 2; joueur.y = VH * 0.62; joueur.vx = 0; joueur.vy = 0; joueur.dir = 1;
+  joueur.ax = 1; joueur.ay = 0;
+  joueur.dashT = 0; joueur.dashCd = 0; joueur.dashInv = 0; joueur.dashTouches = [];
+
+  appliquerPouvoir('arc');   // Rémi commence avec son arc
+  demarrerManche(1);
+  cacherNom();
+}
+
+function demarrerManche(n) {
+  jeu.manche = n;
+  jeu.budget = Math.round(CONFIG.MANCHE_BASE * Math.pow(CONFIG.MANCHE_CROISSANCE, n - 1));
+  jeu.restant = jeu.budget;
+  jeu.delaiSpawn = 0;
+  jeu.banniere = 2.0;
+  jeu.balrogFait = n < CONFIG.BALROG_DEPUIS;
+  if (n > 1) SFX.manche();
+}
+
+function pvOrc() {
+  const paliers = Math.floor((jeu.manche - 1) / CONFIG.ORC_PV_TOUS_LES);
+  return CONFIG.ORC_PV + paliers * CONFIG.ORC_PV_BONUS;
+}
+
+function chanceElite() {
+  if (jeu.manche < CONFIG.ELITE_DEPUIS) return 0;
+  const bonus = (jeu.manche - CONFIG.ELITE_DEPUIS) * CONFIG.ELITE_CHANCE_PAR_MANCHE;
+  return Math.min(CONFIG.ELITE_CHANCE_MAX, CONFIG.ELITE_CHANCE + bonus);
+}
+
+function apparaitreOrc() {
+  const marge = 14;
+  let x, y, essais = 0;
+  do {
+    const cote = rndi(0, 3);
+    if (cote === 0) { x = rnd(0, VW); y = -marge; }
+    else if (cote === 1) { x = rnd(0, VW); y = VH + marge; }
+    else if (cote === 2) { x = -marge; y = rnd(hudTop + HUD_H, VH); }
+    else { x = VW + marge; y = rnd(hudTop + HUD_H, VH); }
+    essais++;
+  } while (pointDansMur(x, y, 10) && essais < 12);
+
+  return placerOrc(x, y, Math.random() < chanceElite() ? 'elite' : 'orc');
+}
+
+function placerOrc(x, y, genre) {
+  if (genre === 'balrog') {
+    const pv = pvOrc() * CONFIG.BALROG_PV;
+    jeu.orcs.push({
+      x, y, r: 12, pv, pvMax: pv, balrog: true,
+      xp: CONFIG.BALROG_XP,
+      v: CONFIG.ORC_VITESSE * CONFIG.BALROG_VITESSE,
+      degats: CONFIG.BALROG_DEGATS,
+      dir: 1, anim: rnd(0, 6), flash: 0, peur: 0, immuPeur: 0, cdHache: {},
+    });
+    jeu.banniere = 0;
+    jeu.flotteurs.push({ x: VW / 2, y: VH * 0.36, txt: 'UN BALROG', vie: 2.4, c: '#ff6a2a' });
+    jeu.secousse = 0.5;
+    [110, 88, 66].forEach((f, i) => setTimeout(() => beep(f, 0.5, 'sawtooth', 0.13), i * 240));
+    buzz([90, 70, 140]);
+    return;
+  }
+  const elite = genre === 'elite';
+  const pv = pvOrc() * (elite ? CONFIG.ELITE_PV : 1);
+  jeu.orcs.push({
+    x, y,
+    r: elite ? 8 : 6,
+    pv, pvMax: pv,
+    elite,
+    xp: elite ? CONFIG.ELITE_XP : CONFIG.XP_PAR_ORC,
+    v: CONFIG.ORC_VITESSE * rnd(0.85, 1.15) * (elite ? 0.9 : 1),
+    degats: 1,
+    dir: 1, anim: rnd(0, 6), flash: 0, peur: 0, immuPeur: 0, cdHache: {},
+  });
+}
+
+function apparaitreBalrog() {
+  const marge = 20;
+  const cote = rndi(0, 3);
+  let x, y;
+  if (cote === 0) { x = rnd(30, VW - 30); y = -marge; }
+  else if (cote === 1) { x = rnd(30, VW - 30); y = VH + marge; }
+  else if (cote === 2) { x = -marge; y = rnd(hudTop + HUD_H + 40, VH - 20); }
+  else { x = VW + marge; y = rnd(hudTop + HUD_H + 40, VH - 20); }
+  placerOrc(x, y, 'balrog');
+}
+
+/* ============================================================
+   8. ENTRÉES — joystick flottant + clavier
+   ============================================================ */
+
+const stick = { actif: false, id: null, ox: 0, oy: 0, x: 0, y: 0, dx: 0, dy: 0 };
+const RAYON_STICK = 26;
+const touches = {};
+
+function versMonde(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * VW, y: (e.clientY - r.top) / r.height * VH };
+}
+
+function onDown(e) {
+  initAudio();
+  const p = versMonde(e);
+
+  if (jeu.etat === 'menu') {
+    if (!menuPret()) { jeu.menuT = 999; return; }   // un appui suffit à tout afficher
+    reset(); jeu.etat = 'jeu'; return;
+  }
+  if (jeu.etat === 'fin') {
+    if (jeu.attenteNom || jeu.finCooldown > 0) return;
+    reset(); jeu.etat = 'jeu'; return;
+  }
+  if (jeu.etat === 'niveau') {
+    const b = jeu.boutonValider;
+    if (b && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) { validerCarte(); return; }
+    const c = jeu.cartes.find(k => p.x >= k.x && p.x <= k.x + k.w && p.y >= k.y && p.y <= k.y + k.h);
+    if (c) selectionnerCarte(c.cle);
+    return;
+  }
+  // Le bouton d'esquive a la priorité sur le joystick
+  if (dist2(p.x, p.y, BOUTON_DASH.x, BOUTON_DASH.y) < (BOUTON_DASH.r + 8) * (BOUTON_DASH.r + 8)) {
+    lancerDash();
+    return;
+  }
+
+  // En jeu : le joystick naît sous le doigt
+  if (stick.actif) return;
+  stick.actif = true; stick.id = e.pointerId;
+  stick.ox = p.x; stick.oy = p.y; stick.x = p.x; stick.y = p.y;
+  stick.dx = 0; stick.dy = 0;
+}
+
+function onMove(e) {
+  if (!stick.actif || e.pointerId !== stick.id) return;
+  const p = versMonde(e);
+  let dx = p.x - stick.ox, dy = p.y - stick.oy;
+  const d = Math.hypot(dx, dy);
+  if (d > RAYON_STICK) { dx = dx / d * RAYON_STICK; dy = dy / d * RAYON_STICK; }
+  stick.x = stick.ox + dx; stick.y = stick.oy + dy;
+  const dead = 3;
+  if (d < dead) { stick.dx = 0; stick.dy = 0; }
+  else { const n = Math.min(1, d / RAYON_STICK); const l = Math.hypot(dx, dy) || 1; stick.dx = dx / l * n; stick.dy = dy / l * n; }
+}
+
+function onUp(e) {
+  if (e.pointerId === stick.id) { stick.actif = false; stick.id = null; stick.dx = 0; stick.dy = 0; }
+}
+
+window.addEventListener('pointerdown', e => { e.preventDefault(); onDown(e); }, { passive: false });
+window.addEventListener('pointermove', e => { e.preventDefault(); onMove(e); }, { passive: false });
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', onUp);
+
+window.addEventListener('keydown', e => {
+  touches[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+  if (e.code === 'KeyM') muted = !muted;
+  if (jeu.etat === 'jeu' && (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'Space')) lancerDash();
+  if (jeu.etat === 'menu' && (e.code === 'Space' || e.code === 'Enter')) {
+    initAudio();
+    if (!menuPret()) jeu.menuT = 999; else { reset(); jeu.etat = 'jeu'; }
+  }
+  else if (jeu.etat === 'fin' && !jeu.attenteNom && jeu.finCooldown <= 0 && (e.code === 'Space' || e.code === 'Enter')) { reset(); jeu.etat = 'jeu'; }
+  else if (jeu.etat === 'niveau') {
+    const i = { Digit1: 0, Digit2: 1, Digit3: 2 }[e.code];
+    if (i !== undefined && jeu.cartes[i]) selectionnerCarte(jeu.cartes[i].cle);
+    else if (e.code === 'Enter' || e.code === 'Space') validerCarte();
+  }
+});
+window.addEventListener('keyup', e => { touches[e.code] = false; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) lastTime = 0; });
+
+function reductionDashCd() { const s = statsDe('bottes'); return 1 - (s ? s.cd : 0); }
+
+function lancerDash() {
+  if (joueur.dashT > 0 || joueur.dashCd > 0) return;
+  const k = directionClavier();
+  let dx = stick.actif ? stick.dx : k.dx;
+  let dy = stick.actif ? stick.dy : k.dy;
+  if (!dx && !dy) { dx = joueur.ax; dy = joueur.ay; }   // à l'arrêt, il bondit devant lui
+  const l = Math.hypot(dx, dy) || 1;
+  joueur.ddx = dx / l; joueur.ddy = dy / l;
+  joueur.ax = joueur.ddx; joueur.ay = joueur.ddy;
+  joueur.dashT = CONFIG.DASH_DUREE;
+  joueur.dashCd = CONFIG.DASH_CD * reductionDashCd();
+  joueur.dashInv = CONFIG.DASH_DUREE + CONFIG.DASH_GRACE;
+  joueur.dashTouches = [];
+  beep(300, 0.12, 'triangle', 0.09, 700);
+  buzz(12);
+}
+
+function directionClavier() {
+  let dx = 0, dy = 0;
+  if (touches.ArrowLeft || touches.KeyA || touches.KeyQ) dx -= 1;
+  if (touches.ArrowRight || touches.KeyD) dx += 1;
+  if (touches.ArrowUp || touches.KeyW || touches.KeyZ) dy -= 1;
+  if (touches.ArrowDown || touches.KeyS) dy += 1;
+  const l = Math.hypot(dx, dy);
+  return l ? { dx: dx / l, dy: dy / l } : { dx: 0, dy: 0 };
+}
+
+/* ============================================================
+   9. CLASSEMENT  (voir leaderboard.js)
+   ============================================================ */
+
+const JEU_ID = 'remi-comte';
+let board = [], boardReady = false;
+
+async function loadBoard() {
+  board = await Classement.charger(JEU_ID);
+  boardReady = true;
+}
+function qualifie(tues) { return Classement.qualifie(board, tues); }
+
+async function envoyerScore(nom, tues, temps, niveau, manche) {
+  const r = await Classement.envoyer(JEU_ID, {
+    name: nom, score: tues, detail: { temps, niveau, manche },
+  });
+  board = r.liste;
+  jeu.monRang = r.rang;
+}
+
+const nameBox = document.getElementById('nameBox');
+const nameInput = document.getElementById('nameInput');
+const nameOk = document.getElementById('nameOk');
+function cacherNom() { nameBox.classList.remove('on'); }
+function montrerNom() { nameBox.classList.add('on'); nameInput.value = ''; setTimeout(() => nameInput.focus(), 60); }
+function nettoyerNom(raw) {
+  const up = stripAccents(String(raw || '')).toUpperCase();
+  return ([...up].filter(c => FONT[c] && c !== ' ').join('').slice(0, 10)) || 'ANONYME';
+}
+async function validerNom() {
+  if (!jeu.attenteNom) return;
+  jeu.attenteNom = false; cacherNom();
+  await envoyerScore(nettoyerNom(nameInput.value), jeu.tues, Math.floor(jeu.temps), jeu.niveau, jeu.manche);
+}
+nameOk.addEventListener('click', e => { e.stopPropagation(); validerNom(); });
+nameInput.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); validerNom(); } });
+nameBox.addEventListener('pointerdown', e => e.stopPropagation());
+
+/* --- Bouton retour vers Le Rediaverse --- */
+const retourEl = document.getElementById('retour');
+retourEl.addEventListener('pointerdown', e => e.stopPropagation());
+function majRetour(visible) { retourEl.classList.toggle('on', !!visible); }
+
+
+async function finPartie() {
+  jeu.etat = 'fin'; jeu.finCooldown = 0.8; jeu.monRang = -1;
+  SFX.fin(); buzz([60, 60, 120]);
+  await loadBoard();
+  if (qualifie(jeu.tues)) { jeu.attenteNom = true; montrerNom(); }
+}
+
+/* ============================================================
+   10. MONTÉE DE NIVEAU
+   ============================================================ */
+
+function ouvrirNiveau() {
+  jeu.etat = 'niveau';
+  SFX.niveau();
+  const cles = tirerChoix();
+  const marge = 14, w = VW - marge * 2, h = 74, gap = 10;
+  const hBouton = 34, ecart = 14;
+  const total = cles.length * h + (cles.length - 1) * gap + ecart + hBouton;
+  const y0 = Math.round(Math.max(hudTop + HUD_H + 48, (VH - total) / 2 + 18));
+  jeu.cartes = cles.map((cle, i) => ({ cle, x: marge, y: y0 + i * (h + gap), w, h }));
+  jeu.carteChoisie = null;
+  const bas = y0 + cles.length * h + (cles.length - 1) * gap;
+  jeu.boutonValider = { x: marge, y: bas + ecart, w, h: hBouton };
+}
+
+function selectionnerCarte(cle) {
+  if (jeu.carteChoisie === cle) return;
+  jeu.carteChoisie = cle;
+  beep(660, 0.05, 'triangle', 0.07, 880);
+}
+
+function validerCarte() {
+  if (!jeu.carteChoisie) return;
+  const cle = jeu.carteChoisie;
+  SFX.choix();
+  appliquerPouvoir(cle);
+  jeu.cartes = [];
+  jeu.carteChoisie = null;
+  jeu.boutonValider = null;
+  if (jeu.xp >= jeu.xpNeed) {
+    jeu.xp -= jeu.xpNeed;
+    jeu.niveau++;
+    jeu.xpNeed = Math.round(CONFIG.XP_BASE * Math.pow(CONFIG.XP_CROISSANCE, jeu.niveau - 1));
+    ouvrirNiveau();
+  } else {
+    jeu.etat = 'jeu';
+  }
+}
+
+function gagnerXP(n) {
+  jeu.xp += n;
+  if (jeu.etat === 'jeu' && jeu.xp >= jeu.xpNeed) {
+    jeu.xp -= jeu.xpNeed;
+    jeu.niveau++;
+    jeu.xpNeed = Math.round(CONFIG.XP_BASE * Math.pow(CONFIG.XP_CROISSANCE, jeu.niveau - 1));
+    ouvrirNiveau();
+  }
+}
+
+/* ============================================================
+   11. ARMES
+   ============================================================ */
+
+function minuteur(cle, delai, action) {
+  jeu.minuteurs[cle] = (jeu.minuteurs[cle] || 0) - lastDt;
+  if (jeu.minuteurs[cle] <= 0) { jeu.minuteurs[cle] = delai; action(); }
+}
+
+function orcLePlusProche(x, y, max = 1e9) {
+  let best = null, bd = max * max;
+  for (const o of jeu.orcs) {
+    const d = dist2(x, y, o.x, o.y);
+    if (d < bd) { bd = d; best = o; }
+  }
+  return best;
+}
+
+function blesser(orc, degats) {
+  const inflige = Math.min(degats, orc.pv);   // le surplus sur un orc mourant ne compte pas
+  orc.pv -= degats;
+  orc.flash = 0.12;
+
+  const vol = volDeVie();
+  if (vol > 0 && jeu.pv > 0 && jeu.pv < jeu.pvMax) {
+    const soin = inflige * vol;
+    jeu.pv = Math.min(jeu.pvMax, jeu.pv + soin);
+    jeu.volCumul += soin;
+    if (jeu.volCumul >= 5) {
+      const paquet = Math.floor(jeu.volCumul);
+      jeu.volCumul -= paquet;
+      jeu.flotteurs.push({ x: joueur.x, y: joueur.y - 20, txt: '+' + paquet, vie: 0.8, c: '#8fc45a' });
+    }
+  }
+
+  if (orc.pv <= 0) {
+    orc.mort = true;
+    jeu.tues++;
+    gagnerXP(orc.xp || CONFIG.XP_PAR_ORC);
+    SFX.mort();
+    if (orc.elite) {
+      jeu.flotteurs.push({ x: orc.x, y: orc.y - 16, txt: '+' + (orc.xp || 1), vie: 1.1, c: '#ffcf5c' });
+      jeu.secousse = Math.max(jeu.secousse, 0.12);
+      beep(300, 0.25, 'sawtooth', 0.10, 90);
+    }
+    const n = orc.elite ? 14 : 6;
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const vit = orc.elite ? rnd(40, 120) : rnd(20, 70);
+      jeu.particules.push({ x: orc.x, y: orc.y, vx: Math.cos(a) * vit, vy: Math.sin(a) * vit, vie: rnd(0.2, 0.5), c: orc.elite && i % 3 === 0 ? '#ff5069' : (i % 2 ? '#7d9c52' : '#3f4d2a'), s: 2 });
+    }
+  } else SFX.coup();
+}
+
+function souffleDuBalrog(dt) {
+  const sb = statsDe('balrog');
+  if (!sb) return;
+  const deg = bonusDegats();
+  const r2 = sb.rayon * sb.rayon;
+  for (const o of jeu.orcs) {
+    if (o.mort || joueur.dashTouches.indexOf(o) !== -1) continue;
+    if (dist2(o.x, o.y, joueur.x, joueur.y) > r2) continue;
+    joueur.dashTouches.push(o);
+    blesser(o, sb.degats * deg);
+  }
+  // Sillage de braises : décoratif seul, incendiaire avec la Fournaise
+  const feu = synergie('fournaise');
+  const duree = sb.duree * (feu ? 2 : 1);
+  jeu.effets.push({
+    type: 'braise', x: joueur.x, y: joueur.y, r: sb.rayon * 0.8,
+    vie: duree, max: duree,
+    brule: feu ? sb.degats * 0.35 * deg : 0, tick: 0, touches: [],
+  });
+  for (let i = 0; i < 2; i++) {
+    const a = Math.random() * Math.PI * 2;
+    jeu.particules.push({ x: joueur.x, y: joueur.y, vx: Math.cos(a) * rnd(10, 45), vy: Math.sin(a) * rnd(10, 45) - 20, vie: rnd(0.2, 0.5), c: i % 2 ? '#ff9a3d' : '#ffcf5c', s: 2 });
+  }
+}
+
+function coupDeHache(angle, s, deg) {
+  const portee = s.rayon * (synergie('forge') ? 1.3 : 1);
+  const r2 = portee * portee;
+  let touche = false;
+  for (const o of jeu.orcs) {
+    if (o.mort) continue;
+    const dx = o.x - joueur.x, dy = o.y - joueur.y;
+    if (dx * dx + dy * dy > r2) continue;
+    let ecart = Math.atan2(dy, dx) - angle;
+    ecart = Math.atan2(Math.sin(ecart), Math.cos(ecart));   // ramené dans [-PI, PI]
+    if (Math.abs(ecart) > s.ouverture / 2) continue;
+    blesser(o, s.degats * deg);
+    touche = true;
+  }
+  jeu.effets.push({
+    type: 'coupe', x: joueur.x, y: joueur.y,
+    angle, ouverture: s.ouverture, r: portee, vie: 0.20, max: 0.20,
+  });
+  if (touche) SFX.coup();
+  beep(touche ? 240 : 320, 0.06, 'square', 0.05, 140);
+}
+
+function majArmes(dt) {
+  const deg = bonusDegats(), cad = bonusCadence();
+
+  // --- Hache de bûcheron : devant, puis dans le dos ---
+  const sh = statsDe('fendoir');
+  if (sh) {
+    minuteur('fendoir', sh.delai * cad, () => {
+      const devant = Math.atan2(joueur.ay, joueur.ax);
+      coupDeHache(devant, sh, deg);
+      jeu.differes.push({ t: sh.retard, fn: () => coupDeHache(devant + Math.PI, sh, deg) });
+    });
+  }
+
+  // --- Arc : vise l'orc le plus proche ---
+  const sa = statsDe('arc');
+  if (sa) {
+    minuteur('arc', sa.delai * cad, () => {
+      const cible = orcLePlusProche(joueur.x, joueur.y);
+      const base = cible
+        ? Math.atan2(cible.y - joueur.y, cible.x - joueur.x)
+        : Math.atan2(joueur.ay, joueur.ax);
+      for (let i = 0; i < sa.nb; i++) {
+        const decalage = sa.nb === 1 ? 0 : (i - (sa.nb - 1) / 2) * sa.ecart;
+        const a = base + decalage;
+        jeu.projectiles.push({
+          type: 'fleche', x: joueur.x, y: joueur.y,
+          vx: Math.cos(a) * 195, vy: Math.sin(a) * 195, angle: a,
+          degats: sa.degats * deg, vie: 3.2,
+          perce: sa.perce, perceMax: sa.perce, touches: [],
+          retour: sa.retour, phase: 'aller', parcouru: 0, portee: 115,
+        });
+      }
+      beep(520, 0.05, 'triangle', 0.05, 760);
+    });
+  }
+
+  // --- Cri du Nazgûl ---
+  const scri = statsDe('cri');
+  if (scri) {
+    minuteur('cri', scri.delai * cad, () => {
+      const r2 = scri.rayon * scri.rayon;
+      let touche = false;
+      for (const o of jeu.orcs) {
+        if (o.mort || dist2(joueur.x, joueur.y, o.x, o.y) > r2) continue;
+        if (o.balrog) continue;                    // il ne connait pas la peur
+        if ((o.immuPeur || 0) > 0) continue;      // il vient déjà de détaler
+        const duree = scri.duree * (o.elite ? 0.5 : 1);
+        o.peur = duree;
+        o.immuPeur = duree + REPOS_PEUR;          // garantit une fenêtre où il revient
+        touche = true;
+      }
+      jeu.effets.push({ type: 'cri', x: joueur.x, y: joueur.y, r: scri.rayon, vie: 0.45, max: 0.45 });
+      beep(170, 0.34, 'sawtooth', 0.09, 55);
+      if (touche) buzz(20);
+    });
+  }
+
+  // --- Haches de la Moria ---
+  const sn = statsDe('haches');
+  if (sn) {
+    for (const n of jeu.haches) {
+      n.a += sn.vitesse * (synergie('forge') ? 1.35 : 1) * dt;
+      n.x = joueur.x + Math.cos(n.a) * sn.rayon;
+      n.y = joueur.y + Math.sin(n.a) * sn.rayon;
+      for (const o of jeu.orcs) {
+        if (o.mort) continue;
+        if (dist2(n.x, n.y, o.x, o.y) < 64) {
+          const k = o.uid || (o.uid = ++uidSeq);
+          if ((n.cd[k] || 0) <= 0) { n.cd[k] = 0.45; blesser(o, sn.degats * deg); }
+        }
+      }
+      for (const k in n.cd) { n.cd[k] -= dt; if (n.cd[k] <= 0) delete n.cd[k]; }
+    }
+  }
+
+  // --- Fumée de pipe ---
+  const sp = statsDe('pipe');
+  if (sp) {
+    minuteur('pipe', sp.delai * cad, () => {
+      const r2 = sp.rayon * sp.rayon;
+      const bonus = synergie('fournaise') ? 1.6 : 1;
+      let touche = false;
+      for (const o of jeu.orcs) {
+        if (!o.mort && dist2(joueur.x, joueur.y, o.x, o.y) < r2) { blesser(o, sp.degats * deg * bonus); touche = true; }
+      }
+      jeu.effets.push({ type: 'pipe', x: joueur.x, y: joueur.y, r: sp.rayon, vie: 0.35, max: 0.35 });
+      if (touche) SFX.coup();
+    });
+  }
+}
+
+let uidSeq = 0;
+
+/* ============================================================
+   12. MISE À JOUR
+   ============================================================ */
+
+let lastDt = 0.016;
+
+function update(dt) {
+  lastDt = dt;
+  jeu.t += dt; jeu.temps += dt;
+  jeu.banniere = Math.max(0, jeu.banniere - dt);
+  if (jeu.synergieBanniere) {
+    jeu.synergieBanniere.t -= dt;
+    if (jeu.synergieBanniere.t <= 0) jeu.synergieBanniere = null;
+  }
+  jeu.secousse = Math.max(0, jeu.secousse - dt);
+  jeu.flash = Math.max(0, jeu.flash - dt);
+  jeu.invuln = Math.max(0, jeu.invuln - dt);
+
+  // --- Apparitions ---
+  if (jeu.restant > 0) {
+    const intervalle = Math.max(0.06, CONFIG.MANCHE_DUREE / jeu.budget);
+    jeu.delaiSpawn -= dt;
+    while (jeu.delaiSpawn <= 0 && jeu.restant > 0) {
+      jeu.delaiSpawn += intervalle;
+      if (jeu.orcs.length < CONFIG.VIVANTS_MAX) { apparaitreOrc(); jeu.restant--; }
+      else break;   // plafond atteint : le reste du budget attend
+    }
+  } else if (jeu.orcs.length === 0) {
+    demarrerManche(jeu.manche + 1);
+  }
+
+  // Un Balrog par manche à partir de la manche 4, à mi-vague
+  if (!jeu.balrogFait && jeu.restant <= jeu.budget * 0.6) {
+    jeu.balrogFait = true;
+    apparaitreBalrog();
+  }
+
+  // --- Déplacement de Rémi ---
+  joueur.dashCd = Math.max(0, joueur.dashCd - dt);
+  joueur.dashInv = Math.max(0, joueur.dashInv - dt);
+
+  if (joueur.dashT > 0) {
+    joueur.dashT -= dt;
+    const ve = CONFIG.VITESSE * bonusVitesse() * CONFIG.DASH_VITESSE;
+    joueur.x += joueur.ddx * ve * dt;
+    joueur.y += joueur.ddy * ve * dt;
+    joueur.dir = joueur.ddx >= 0 ? 1 : -1;
+    souffleDuBalrog(dt);
+    joueur.bouge = true;
+  } else {
+    const k = directionClavier();
+    const dx = stick.actif ? stick.dx : k.dx;
+    const dy = stick.actif ? stick.dy : k.dy;
+    const v = CONFIG.VITESSE * bonusVitesse();
+    joueur.x += dx * v * dt;
+    joueur.y += dy * v * dt;
+    if (dx !== 0) joueur.dir = dx > 0 ? 1 : -1;
+    if (dx !== 0 || dy !== 0) {
+      const l = Math.hypot(dx, dy);
+      joueur.ax = dx / l; joueur.ay = dy / l;
+    }
+    joueur.bouge = (dx !== 0 || dy !== 0);
+  }
+
+  const hautJouable = hudTop + HUD_H + 6;
+  joueur.x = Math.max(joueur.r + 2, Math.min(VW - joueur.r - 2, joueur.x));
+  joueur.y = Math.max(hautJouable, Math.min(VH - joueur.r - 4, joueur.y));
+  resoudreMurs(joueur, joueur.r + 2);
+
+  if (joueur.bouge) {
+    joueur.anim += dt * 9;
+    if (joueur.anim > 1) { joueur.anim -= 1; joueur.frame = (joueur.frame + 1) % 4; }
+  } else joueur.frame = 1;
+
+  // --- Orcs ---
+  for (const o of jeu.orcs) {
+    o.peur = Math.max(0, (o.peur || 0) - dt);
+    o.immuPeur = Math.max(0, (o.immuPeur || 0) - dt);
+    const fuit = o.peur > 0;
+    const a = Math.atan2(joueur.y - o.y, joueur.x - o.x) + (fuit ? Math.PI : 0);
+    const v = o.v * (fuit ? 0.9 : 1);   // il détale en trébuchant, pas plus vite
+    o.x += Math.cos(a) * v * dt;
+    o.y += Math.sin(a) * v * dt;
+    o.dir = Math.cos(a) > 0 ? 1 : -1;
+    o.anim += dt * 7;
+    o.flash = Math.max(0, o.flash - dt);
+    resoudreMurs(o, o.r + 1);
+  }
+
+  // Séparation : évite que les orcs se superposent en un seul tas
+  for (let i = 0; i < jeu.orcs.length; i++) {
+    const a = jeu.orcs[i];
+    for (let j = i + 1; j < jeu.orcs.length; j++) {
+      const b = jeu.orcs[j];
+      const ddx = b.x - a.x, ddy = b.y - a.y;
+      const d2 = ddx * ddx + ddy * ddy;
+      const min = 10;
+      if (d2 > 0.01 && d2 < min * min) {
+        const d = Math.sqrt(d2), p = (min - d) / d * 0.5;
+        a.x -= ddx * p; a.y -= ddy * p;
+        b.x += ddx * p; b.y += ddy * p;
+      }
+    }
+  }
+
+  // --- Contact avec Rémi ---
+  if (jeu.invuln <= 0 && joueur.dashInv <= 0) {
+    for (const o of jeu.orcs) {
+      if (o.mort) continue;
+      if (dist2(o.x, o.y, joueur.x, joueur.y) < (o.r + joueur.r) * (o.r + joueur.r)) {
+        const degats = CONFIG.DEGATS_CONTACT * (o.degats || 1) * reductionDegats();
+        jeu.pv -= degats;
+        jeu.invuln = CONFIG.INVULN;
+        jeu.secousse = 0.3; jeu.flash = 0.25;
+        SFX.touche();
+        jeu.flotteurs.push({ x: joueur.x, y: joueur.y - 18, txt: '-' + Math.round(degats), vie: 0.9, c: '#ff5069' });
+        if (jeu.pv <= 0) { jeu.pv = 0; finPartie(); return; }
+        break;
+      }
+    }
+  }
+
+  // --- Armes ---
+  majArmes(dt);
+
+  // --- Projectiles ---
+  for (let i = jeu.projectiles.length - 1; i >= 0; i--) {
+    const p = jeu.projectiles[i];
+    const ax = p.vx * dt, ay = p.vy * dt;
+    p.x += ax; p.y += ay;
+    p.parcouru += Math.hypot(ax, ay);
+    p.vie -= dt;
+    p.angle = Math.atan2(p.vy, p.vx);
+
+    const horsJeu = p.x < -12 || p.x > VW + 12 || p.y < -12 || p.y > VH + 12;
+    const bloque = pointDansMur(p.x, p.y, 0);
+
+    if (p.phase === 'aller' && (p.parcouru >= p.portee || horsJeu || bloque)) {
+      if (p.retour) {
+        // Demi-tour : la flèche redevient dangereuse pour ceux déjà touchés
+        p.phase = 'retour';
+        p.touches = [];
+        p.perce = p.perceMax;
+        if (bloque) { p.x -= ax; p.y -= ay; }
+      } else {
+        jeu.projectiles.splice(i, 1); continue;
+      }
+    }
+
+    if (p.phase === 'retour') {
+      const a = Math.atan2(joueur.y - p.y, joueur.x - p.x);
+      p.vx = Math.cos(a) * 215; p.vy = Math.sin(a) * 215;
+      if (dist2(p.x, p.y, joueur.x, joueur.y) < 100) { jeu.projectiles.splice(i, 1); continue; }
+    }
+
+    if (p.vie <= 0 || (p.phase === 'aller' && !p.retour && (horsJeu || bloque))) {
+      jeu.projectiles.splice(i, 1); continue;
+    }
+
+    let consomme = false;
+    for (const o of jeu.orcs) {
+      if (o.mort || (p.touches && p.touches.indexOf(o) !== -1)) continue;
+      if (dist2(p.x, p.y, o.x, o.y) >= 49) continue;
+      blesser(o, p.degats);
+      if (synergie('volee') && !o.mort && (o.immuPeur || 0) <= 0) {
+        const d = 0.7 * (o.elite ? 0.5 : 1);
+        o.peur = Math.max(o.peur || 0, d);
+        o.immuPeur = d + REPOS_PEUR;
+      }
+      if (p.perce > 0) { p.perce--; p.touches.push(o); }
+      else if (p.retour && p.phase === 'aller') { p.phase = 'retour'; p.touches = []; p.perce = p.perceMax; break; }
+      else { consomme = true; break; }
+    }
+    if (consomme) jeu.projectiles.splice(i, 1);
+  }
+
+  // --- Actions différées (le coup de hache dans le dos) ---
+  for (let i = jeu.differes.length - 1; i >= 0; i--) {
+    const d = jeu.differes[i];
+    d.t -= dt;
+    if (d.t <= 0) { jeu.differes.splice(i, 1); d.fn(); }
+  }
+
+  // --- Nettoyage ---
+  jeu.orcs = jeu.orcs.filter(o => !o.mort);
+
+  for (let i = jeu.effets.length - 1; i >= 0; i--) {
+    const e = jeu.effets[i];
+    e.vie -= dt;
+    if (e.brule) {
+      e.tick -= dt;
+      if (e.tick <= 0) {
+        e.tick = 0.35;
+        const r2 = e.r * e.r;
+        for (const o of jeu.orcs) {
+          if (!o.mort && dist2(e.x, e.y, o.x, o.y) < r2) blesser(o, e.brule);
+        }
+      }
+    }
+    if (e.vie <= 0) jeu.effets.splice(i, 1);
+  }
+  for (let i = jeu.particules.length - 1; i >= 0; i--) {
+    const p = jeu.particules[i]; p.vie -= dt;
+    if (p.vie <= 0) { jeu.particules.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94;
+  }
+  for (let i = jeu.flotteurs.length - 1; i >= 0; i--) {
+    const f = jeu.flotteurs[i]; f.vie -= dt; f.y -= 24 * dt;
+    if (f.vie <= 0) jeu.flotteurs.splice(i, 1);
+  }
+}
+
+/* ============================================================
+   13. RENDU
+   ============================================================ */
+
+function drawJoueur(g) {
+  if (joueur.dashT > 0) {
+    g.globalAlpha = 0.28;
+    g.fillStyle = '#7bd8c8';
+    for (let i = 1; i <= 3; i++) {
+      g.fillRect(Math.round(joueur.x - joueur.ddx * i * 7 - 4), Math.round(joueur.y - joueur.ddy * i * 7 - 6), 8, 12);
+    }
+    g.globalAlpha = 1;
+  }
+  // Sur 1,7 s, un clignotement franc ferait perdre Rémi de vue : on le laisse
+  // visible en transparence sur les images creuses.
+  const clignote = jeu.invuln > 0 && Math.floor(jeu.invuln * 12) % 2 === 0;
+  if (clignote) g.globalAlpha = 0.35;
+
+  const spr = (joueur.dir > 0 ? SPR.remi.d : SPR.remi.g)[joueur.frame];
+  g.fillStyle = 'rgba(0,0,0,0.20)';
+  g.fillRect(Math.round(joueur.x - 6), Math.round(joueur.y + 9), 12, 3);
+  g.drawImage(spr, Math.round(joueur.x - spr.pw / 2), Math.round(joueur.y - spr.ph + 11));
+
+  g.globalAlpha = 1;
+
+  // Halo pour signaler clairement que les coups ne passent pas
+  if (jeu.invuln > 0) {
+    const p = Math.min(1, jeu.invuln / CONFIG.INVULN);
+    g.globalAlpha = 0.20 + 0.18 * Math.sin(jeu.t * 14);
+    g.strokeStyle = '#7bd8c8';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.arc(joueur.x, joueur.y + 1, 12 + (1 - p) * 3, 0, 7);
+    g.stroke();
+    g.globalAlpha = 1;
+  }
+}
+
+function drawOrc(g, o) {
+  if (o.balrog) return drawBalrog(g, o);
+  const jeuSpr = o.elite ? SPR.elite : SPR.orc;
+  const spr = (o.dir > 0 ? jeuSpr.d : jeuSpr.g)[Math.floor(o.anim) % 2];
+
+  // Halo rouge des élites
+  if (o.elite) {
+    const pulse = 1 + Math.sin(jeu.t * 5 + o.anim) * 0.10;
+    const R = 15 * pulse;
+    const grad = g.createRadialGradient(o.x, o.y - 2, 2, o.x, o.y - 2, R);
+    grad.addColorStop(0, 'rgba(255,60,80,0.42)');
+    grad.addColorStop(0.55, 'rgba(255,60,80,0.18)');
+    grad.addColorStop(1, 'rgba(255,60,80,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(o.x, o.y - 2, R, 0, 7); g.fill();
+  }
+
+  const ombreW = o.elite ? 13 : 10;
+  g.fillStyle = 'rgba(0,0,0,0.20)';
+  g.fillRect(Math.round(o.x - ombreW / 2), Math.round(o.y + (o.elite ? 8 : 7)), ombreW, 3);
+  g.drawImage(spr, Math.round(o.x - spr.pw / 2), Math.round(o.y - spr.ph + (o.elite ? 11 : 9)));
+
+  if (o.flash > 0) {
+    g.globalAlpha = Math.min(1, o.flash * 6);
+    g.fillStyle = '#fdfbf5';
+    const fw = o.elite ? 15 : 12, fh = o.elite ? 20 : 16;
+    g.fillRect(Math.round(o.x - fw / 2), Math.round(o.y - fh + 7), fw, fh);
+    g.globalAlpha = 1;
+  }
+
+  if (o.peur > 0) {
+    drawText(g, '!', Math.round(o.x - 1), Math.round(o.y - (o.elite ? 26 : 22)), 1, '#b98fd6');
+  }
+
+  // Barre de vie dès que l'orc encaisse plus d'un coup
+  if ((o.pvMax > 3 || o.elite) && o.pv < o.pvMax) {
+    const w = o.elite ? 18 : 12, p = Math.max(0, o.pv / o.pvMax);
+    const by = Math.round(o.y - (o.elite ? 18 : 14));
+    g.fillStyle = 'rgba(0,0,0,0.5)'; g.fillRect(Math.round(o.x - w / 2), by, w, o.elite ? 3 : 2);
+    g.fillStyle = o.elite ? '#ff5069' : '#c94a4a';
+    g.fillRect(Math.round(o.x - w / 2), by, Math.round(w * p), o.elite ? 3 : 2);
+  }
+}
+
+function drawBalrog(g, o) {
+  const spr = (o.dir > 0 ? SPR.balrog.d : SPR.balrog.g)[0];
+  const pulse = 1 + Math.sin(jeu.t * 4) * 0.08;
+  const R = 34 * pulse;
+  const grad = g.createRadialGradient(o.x, o.y - 6, 3, o.x, o.y - 6, R);
+  grad.addColorStop(0, 'rgba(255,120,40,0.50)');
+  grad.addColorStop(0.45, 'rgba(255,70,30,0.22)');
+  grad.addColorStop(1, 'rgba(255,60,20,0)');
+  g.fillStyle = grad;
+  g.beginPath(); g.arc(o.x, o.y - 6, R, 0, 7); g.fill();
+
+  g.fillStyle = 'rgba(0,0,0,0.28)';
+  g.fillRect(Math.round(o.x - 11), Math.round(o.y + 10), 22, 4);
+  g.drawImage(spr, Math.round(o.x - spr.pw / 2), Math.round(o.y - spr.ph + 13));
+
+  if (o.flash > 0) {
+    g.globalAlpha = Math.min(1, o.flash * 6);
+    g.fillStyle = '#ffd8a0';
+    g.fillRect(Math.round(o.x - 13), Math.round(o.y - 22), 26, 34);
+    g.globalAlpha = 1;
+  }
+
+  // Braises qui montent
+  if (Math.random() < 0.4) {
+    jeu.particules.push({ x: o.x + rnd(-10, 10), y: o.y + rnd(-14, 6), vx: rnd(-8, 8), vy: rnd(-40, -18), vie: rnd(0.3, 0.7), c: Math.random() < 0.5 ? '#ff9a3d' : '#ffcf5c', s: 2 });
+  }
+
+  const w = 30, pv = Math.max(0, o.pv / o.pvMax);
+  g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(Math.round(o.x - w / 2), Math.round(o.y - 30), w, 4);
+  g.fillStyle = '#ff6a2a'; g.fillRect(Math.round(o.x - w / 2), Math.round(o.y - 30), Math.round(w * pv), 4);
+}
+
+function drawBoutonDash(g) {
+  const b = BOUTON_DASH;
+  const pret = joueur.dashCd <= 0;
+  const cdMax = CONFIG.DASH_CD * reductionDashCd();
+
+  g.globalAlpha = pret ? 0.34 : 0.20;
+  g.fillStyle = '#0b1206';
+  g.beginPath(); g.arc(b.x, b.y, b.r, 0, 7); g.fill();
+  g.globalAlpha = 1;
+
+  // Anneau de recharge
+  g.strokeStyle = pret ? '#7bd8c8' : 'rgba(255,255,255,0.22)';
+  g.lineWidth = 2;
+  g.globalAlpha = pret ? 0.85 : 0.5;
+  g.beginPath(); g.arc(b.x, b.y, b.r, 0, 7); g.stroke();
+  if (!pret) {
+    const part = 1 - joueur.dashCd / cdMax;
+    g.strokeStyle = '#8fc45a'; g.globalAlpha = 0.9;
+    g.beginPath();
+    g.arc(b.x, b.y, b.r, -Math.PI / 2, -Math.PI / 2 + part * Math.PI * 2);
+    g.stroke();
+  }
+  g.globalAlpha = 1;
+
+  const col = pret ? '#7bd8c8' : 'rgba(255,255,255,0.35)';
+  drawTextCentered(g, 'ESQUIVE', b.x, b.y - 3, 1, col);
+  if (!pret) drawTextCentered(g, joueur.dashCd.toFixed(1), b.x, b.y + 6, 1, 'rgba(255,255,255,0.35)');
+}
+
+function drawJoystick(g) {
+  if (!stick.actif) return;
+  g.globalAlpha = 0.30;
+  g.strokeStyle = '#fdfbf5'; g.lineWidth = 2;
+  g.beginPath(); g.arc(stick.ox, stick.oy, RAYON_STICK, 0, 7); g.stroke();
+  g.globalAlpha = 0.55;
+  g.fillStyle = '#fdfbf5';
+  g.beginPath(); g.arc(stick.x, stick.y, 9, 0, 7); g.fill();
+  g.globalAlpha = 1;
+}
+
+function drawHUD(g) {
+  const top = hudTop;
+
+  // Barre de vie
+  const bw = VW - 16;
+  g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(8, top, bw, 8);
+  const pvp = Math.max(0, jeu.pv / jeu.pvMax);
+  g.fillStyle = pvp > 0.35 ? '#c94a4a' : '#ff5069';
+  g.fillRect(8, top, Math.round(bw * pvp), 8);
+  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(8, top, bw, 1);
+  const pvTxt = Math.ceil(jeu.pv) + '/' + Math.round(jeu.pvMax);
+  drawText(g, pvTxt, VW / 2 - textWidth(pvTxt, 1) / 2, top + 2, 1, '#fffdf6');
+
+  // Barre d'expérience
+  const xpp = Math.max(0, Math.min(1, jeu.xp / jeu.xpNeed));
+  g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(8, top + 11, bw, 5);
+  g.fillStyle = '#8fc45a'; g.fillRect(8, top + 11, Math.round(bw * xpp), 5);
+
+  // Chiffres
+  drawText(g, 'NIV ' + jeu.niveau, 8, top + 20, 1, '#8fc45a');
+  const mid = 'MANCHE ' + jeu.manche;
+  drawText(g, mid, VW / 2 - textWidth(mid, 1) / 2, top + 20, 1, 'rgba(255,255,255,0.7)');
+  const t = Math.floor(jeu.temps);
+  const chrono = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
+  drawText(g, chrono, VW - 8 - textWidth(chrono, 1), top + 20, 1, 'rgba(255,255,255,0.7)');
+
+  const tue = jeu.tues + ' ORCS';
+  drawText(g, tue, VW - 8 - textWidth(tue, 1), top + 29, 1, 'rgba(255,255,255,0.45)');
+  drawText(g, 'XP ' + jeu.xp + '/' + jeu.xpNeed, 8, top + 29, 1, 'rgba(255,255,255,0.45)');
+
+  if (jeu.synergieBanniere) {
+    const b = jeu.synergieBanniere;
+    g.globalAlpha = Math.min(1, b.t / 0.5);
+    drawTextCentered(g, 'SYNERGIE', VW / 2, VH * 0.20, 1, '#b98fd6');
+    drawTextCentered(g, b.nom, VW / 2, VH * 0.20 + 9, 2, '#ffcf5c');
+    g.globalAlpha = 1;
+  }
+
+  if (jeu.banniere > 0) {
+    const a = Math.min(1, jeu.banniere / 0.5);
+    g.globalAlpha = a;
+    drawTextCentered(g, 'MANCHE ' + jeu.manche, VW / 2, VH * 0.30, 3, '#ffcf5c');
+    drawTextCentered(g, jeu.budget + ' ORCS', VW / 2, VH * 0.30 + 22, 1, '#fffdf6');
+    g.globalAlpha = 1;
+  }
+}
+
+function cadre(g, x, y, w, h, couleur) {
+  g.fillStyle = 'rgba(9,12,7,0.90)'; g.fillRect(x + 3, y + 3, w, h);
+  g.fillStyle = 'rgba(24,34,15,0.95)'; g.fillRect(x, y, w, h);
+  g.fillStyle = couleur; g.fillRect(x, y, w, 2);
+  g.fillStyle = 'rgba(255,255,255,0.12)';
+  g.fillRect(x, y + h - 1, w, 1); g.fillRect(x, y, 1, h); g.fillRect(x + w - 1, y, 1, h);
+}
+
+function drawNiveau(g) {
+  g.fillStyle = 'rgba(9,12,7,0.78)'; g.fillRect(0, 0, VW, VH);
+
+  const y0 = jeu.cartes.length ? jeu.cartes[0].y : VH / 2;
+  drawTextCentered(g, 'NIVEAU ' + jeu.niveau, VW / 2, y0 - 40, 3, '#8fc45a');
+  const actives = synergiesActives();
+  if (actives.length) {
+    const t = 'Synergies : ' + actives.map(x => x.nom).join(', ');
+    wrapText(t, VW - 28).slice(0, 2).forEach((l, i) =>
+      drawTextCentered(g, l, VW / 2, y0 - 26 + i * 8, 1, '#b98fd6'));
+  } else {
+    drawTextCentered(g, 'choisis un pouvoir, puis valide', VW / 2, y0 - 18, 1, 'rgba(255,253,246,0.6)');
+  }
+
+  for (const c of jeu.cartes) {
+    const p = POUVOIRS[c.cle];
+    const r = RARETES[p.rarete];
+    const nv = niveauDe(c.cle);
+    const prise = jeu.carteChoisie === c.cle;
+
+    if (prise) {
+      g.fillStyle = r.couleur;
+      g.fillRect(c.x - 3, c.y - 3, c.w + 6, c.h + 6);
+    }
+    cadre(g, c.x, c.y, c.w, c.h, r.couleur);
+    if (prise) {
+      g.fillStyle = 'rgba(255,255,255,0.07)';
+      g.fillRect(c.x, c.y, c.w, c.h);
+    }
+
+    drawText(g, p.nom, c.x + 10, c.y + 10, 1, r.couleur);
+    const et = nv === 0 ? 'NOUVEAU' : 'NIV ' + nv + ' > ' + (nv + 1);
+    drawText(g, et, c.x + c.w - 10 - textWidth(et, 1), c.y + 10, 1, nv === 0 ? '#ffcf5c' : 'rgba(255,255,255,0.55)');
+
+    drawText(g, r.nom, c.x + 10, c.y + 20, 1, 'rgba(255,255,255,0.35)');
+
+    const lignes = wrapText(p.desc, c.w - 20);
+    lignes.slice(0, 3).forEach((l, i) => drawText(g, l, c.x + 10, c.y + 34 + i * 8, 1, '#fffdf6'));
+
+    for (let i = 0; i < MAX_NIVEAU_POUVOIR; i++) {
+      const bx = c.x + 10 + i * 9, by = c.y + c.h - 12;
+      g.fillStyle = i < nv ? r.couleur : (i === nv ? 'rgba(255,207,92,0.85)' : 'rgba(255,255,255,0.15)');
+      g.fillRect(bx, by, 7, 4);
+    }
+
+    if (prise) {
+      drawText(g, 'X', c.x + c.w - 16, c.y + c.h - 13, 1, r.couleur);
+    }
+  }
+
+  // Bouton de validation, inerte tant qu'aucune carte n'est prise
+  const b = jeu.boutonValider;
+  if (b) {
+    const pret = !!jeu.carteChoisie;
+    g.fillStyle = 'rgba(9,12,7,0.9)'; g.fillRect(b.x + 3, b.y + 3, b.w, b.h);
+    g.fillStyle = pret ? '#8fc45a' : 'rgba(60,72,48,0.95)';
+    g.fillRect(b.x, b.y, b.w, b.h);
+    if (pret) {
+      g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(b.x, b.y, b.w, 2);
+    }
+    const txt = pret ? 'VALIDER' : 'CHOISIS UN POUVOIR';
+    const sc = pret ? 2 : 1;
+    drawTextCentered(g, txt, VW / 2, b.y + (b.h - 5 * sc) / 2, sc, pret ? '#18220f' : 'rgba(255,253,246,0.35)');
+  }
+}
+
+const REGLES = [
+  { icon: 'remi',      texte: 'Remi defend actuellement la Comte contre les hordes du Mordor, aide le a triompher !' },
+  { icon: 'doigt',     texte: 'Fais glisser ton doigt n importe ou pour deplacer Remi' },
+  { icon: 'esquive',   texte: 'Le bouton en bas a droite declenche une esquive : utilise la a bon escient' },
+  { icon: 'orc',       texte: 'Tuer des orcs te permettra de devenir plus fort et de choisir des pouvoirs les plus devastateurs !' },
+  { icon: 'etincelle', texte: 'Certains pouvoirs synergisent entre eux : cree des combinaisons uniques !' },
+];
+
+const H_ICONE = { remi: 22, doigt: 10, esquive: 5, orc: 16, etincelle: 7 };
+const LARG_ICONE = 24;
+const CPS = 85;   // caractères par seconde
+
+function dessinerIconeRegle(g, genre, x, y, h) {
+  const centre = spr => g.drawImage(spr, Math.round(x + (LARG_ICONE - spr.pw) / 2 - 4), Math.round(y + (h - spr.ph) / 2));
+  if (genre === 'remi') centre(SPR.remi.d[1]);
+  else if (genre === 'orc') centre(SPR.orc.d[0]);
+  else if (genre === 'doigt') centre(SPR.doigt);
+  else if (genre === 'esquive') centre(SPR.esquive);
+  else centre(SPR.etincelle);
+}
+
+function reglesMisesEnPage() {
+  const pw = VW - 20, PAD = 12;
+  const textW = pw - PAD * 2 - LARG_ICONE;
+  return REGLES.map(r => ({ icon: r.icon, lines: wrapText(r.texte, textW) }));
+}
+const hauteurRegle = r => Math.max(16, H_ICONE[r.icon] + 4, r.lines.length * 7 + 6);
+const totalCaracteres = rows => rows.reduce((s, r) => s + r.lines.reduce((n, l) => n + l.length, 0), 0);
+
+function menuPret() {
+  return Math.floor(jeu.menuT * CPS) >= totalCaracteres(reglesMisesEnPage());
+}
+
+function drawMenu(g) {
+  g.fillStyle = 'rgba(9,12,7,0.62)'; g.fillRect(0, 0, VW, VH);
+
+  const pw = VW - 20, PAD = 12;
+  const rows = reglesMisesEnPage();
+  const bodyH = rows.reduce((s, r) => s + hauteurRegle(r), 0);
+  const cta = wrapText('Appuie pour defendre la Comte', pw - PAD * 2);
+
+  const contentH = 20 + 14 + bodyH + 14 + cta.length * 7;
+  const ph = contentH + 26;
+  const px = Math.round(VW / 2 - pw / 2);
+  const py = Math.round(Math.max(hudTop, (VH - ph) / 2));
+
+  cadre(g, px, py, pw, ph, '#8fc45a');
+
+  let y = py + 15;
+  drawTextCentered(g, 'LA COMTE', VW / 2, y, 4, '#8fc45a');
+  y += 20 + 14;
+
+  // Frappe progressive : la mise en page est figée, seul le texte se dévoile
+  let reste = Math.floor(jeu.menuT * CPS);
+  const rx = px + PAD;
+  const curseur = Math.floor(jeu.t * 3) % 2 === 0;
+
+  for (const r of rows) {
+    const h = hauteurRegle(r);
+    const total = r.lines.reduce((n, l) => n + l.length, 0);
+    if (reste > 0) {
+      dessinerIconeRegle(g, r.icon, rx, y, h);
+      const ty = y + Math.round((h - (r.lines.length * 7 - 2)) / 2);
+      let budget = reste;
+      r.lines.forEach((ln, i) => {
+        if (budget <= 0) return;
+        const morceau = ln.slice(0, budget);
+        drawText(g, morceau, rx + LARG_ICONE, ty + i * 7, 1, '#fffdf6');
+        if (budget < ln.length && curseur) {
+          drawText(g, '.', rx + LARG_ICONE + textWidth(morceau, 1) + 2, ty + i * 7 + 1, 1, '#ffcf5c');
+        }
+        budget -= ln.length;
+      });
+    }
+    reste -= total;
+    y += h;
+  }
+
+  y += 14;
+  if (menuPret()) {
+    const pulse = 0.55 + 0.45 * Math.sin(jeu.t * 4);
+    g.globalAlpha = pulse;
+    cta.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, '#ffcf5c'));
+    g.globalAlpha = 1;
+  }
+
+  if (board.length) {
+    const t = 'Record : ' + board[0].name + '  ' + board[0].score + ' orcs';
+    drawTextCentered(g, t, VW / 2, py + ph + 10, 1, 'rgba(255,207,92,0.7)');
+  }
+}
+
+function drawFin(g) {
+  g.fillStyle = 'rgba(9,12,7,0.80)'; g.fillRect(0, 0, VW, VH);
+
+  const pw = VW - 20, PAD = 12;
+  const rows = Math.max(1, board.length);
+  const contentH = 15 + 12 + 5 + 8 + 5 + 14 + 5 + 11 + rows * 10 + 16 + 5;
+  const ph = contentH + 26;
+  const px = Math.round(VW / 2 - pw / 2);
+  const py = Math.round(Math.max(hudTop, (VH - ph) / 2));
+
+  cadre(g, px, py, pw, ph, '#ff5069');
+
+  let y = py + 15;
+  drawTextCentered(g, 'REMI EST TOMBE', VW / 2, y, 2, '#ff5069');
+  y += 10 + 12;
+  drawTextCentered(g, jeu.tues + ' ORCS VAINCUS', VW / 2, y, 2, '#ffcf5c');
+  y += 10 + 8;
+  const t = Math.floor(jeu.temps);
+  drawTextCentered(g, Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') + '  -  NIVEAU ' + jeu.niveau + '  -  MANCHE ' + jeu.manche, VW / 2, y, 1, '#fffdf6');
+  y += 5 + 14;
+
+  drawText(g, 'TOP 5', px + PAD, y, 1, '#8fc45a');
+  const modeTxt = Classement.libelle();
+  drawText(g, modeTxt, px + pw - PAD - textWidth(modeTxt, 1), y, 1, 'rgba(255,255,255,0.32)');
+  y += 10;
+  g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(px + PAD, y, pw - PAD * 2, 1);
+  y += 6;
+
+  if (!board.length) {
+    drawTextCentered(g, boardReady ? 'aucun score enregistre' : 'chargement', VW / 2, y + 2, 1, 'rgba(255,255,255,0.38)');
+  } else {
+    board.forEach((e, i) => {
+      const moi = i === jeu.monRang;
+      const col = moi ? '#ffcf5c' : 'rgba(255,253,246,0.82)';
+      if (moi) { g.fillStyle = 'rgba(255,207,92,0.12)'; g.fillRect(px + PAD - 3, y - 3, pw - PAD * 2 + 6, 10); }
+      drawText(g, (i + 1) + '.', px + PAD, y, 1, moi ? '#ffcf5c' : 'rgba(255,255,255,0.4)');
+      drawText(g, e.name, px + PAD + 14, y, 1, col);
+      const sc = String(e.score);
+      drawText(g, sc, px + pw - PAD - textWidth(sc, 1), y, 1, col);
+      y += 10;
+    });
+  }
+
+  y += 16;
+  if (jeu.attenteNom) {
+    drawTextCentered(g, 'valide ton pseudo pour rejouer', VW / 2, y, 1, 'rgba(255,255,255,0.45)');
+  } else if (jeu.finCooldown <= 0) {
+    const pulse = 0.55 + 0.45 * Math.sin(jeu.t * 4);
+    g.globalAlpha = pulse;
+    drawTextCentered(g, 'Appuie pour repartir', VW / 2, y, 1, '#8fc45a');
+    g.globalAlpha = 1;
+  }
+}
+
+function render() {
+  const g = ctx;
+  g.save();
+  if (jeu.secousse > 0) {
+    const s = jeu.secousse * 8;
+    g.translate(Math.round(rnd(-s, s)), Math.round(rnd(-s, s)));
+  }
+
+  g.drawImage(solCanvas, 0, 0);
+  for (const m of murs) drawMur(g, m);
+
+  // Effets au sol
+  for (const e of jeu.effets) {
+    const p = e.vie / e.max;
+    g.globalAlpha = p * 0.5;
+    if (e.type === 'braise') {
+      const av = e.vie / e.max;
+      g.globalAlpha = av * 0.55;
+      g.fillStyle = e.brule ? '#ff6a2a' : '#ff9a3d';
+      g.beginPath(); g.arc(e.x, e.y, e.r * (0.55 + av * 0.45), 0, 7); g.fill();
+      g.globalAlpha = av * 0.4;
+      g.fillStyle = '#ffcf5c';
+      g.beginPath(); g.arc(e.x, e.y, e.r * 0.45 * av, 0, 7); g.fill();
+      g.globalAlpha = 1;
+    } else if (e.type === 'cri') {
+      const av = 1 - p;
+      g.globalAlpha = p * 0.7;
+      g.strokeStyle = '#b98fd6'; g.lineWidth = 2;
+      g.beginPath(); g.arc(e.x, e.y, e.r * av, 0, 7); g.stroke();
+      g.globalAlpha = p * 0.35;
+      g.strokeStyle = '#6b4a8a'; g.lineWidth = 4;
+      g.beginPath(); g.arc(e.x, e.y, e.r * av * 0.82, 0, 7); g.stroke();
+      g.globalAlpha = 1;
+    } else if (e.type === 'coupe') {
+      const av = 1 - p;                       // 0 -> 1 pendant le coup
+      g.globalAlpha = p * 0.85;
+      g.strokeStyle = '#e8eef5';
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(e.x, e.y, e.r * 0.82, e.angle - e.ouverture / 2, e.angle + e.ouverture / 2);
+      g.stroke();
+      // La lame balaie l'arc
+      const a = e.angle - e.ouverture / 2 + av * e.ouverture;
+      g.globalAlpha = p;
+      g.save();
+      g.translate(Math.round(e.x + Math.cos(a) * e.r * 0.82), Math.round(e.y + Math.sin(a) * e.r * 0.82));
+      g.rotate(a + Math.PI / 2);
+      g.drawImage(SPR.hache, -Math.round(SPR.hache.pw / 2), -Math.round(SPR.hache.ph / 2));
+      g.restore();
+      g.globalAlpha = 1;
+    } else if (e.type === 'pipe') {
+      g.fillStyle = '#d8d2c4';
+      g.beginPath(); g.arc(e.x, e.y, e.r * (1.05 - p * 0.15), 0, 7); g.fill();
+    } else {
+      g.fillStyle = '#ff9a3d';
+      g.beginPath(); g.arc(e.x, e.y, e.r * (1.2 - p * 0.4), 0, 7); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+
+  // Entités triées par profondeur
+  const tri = jeu.orcs.slice();
+  tri.push(joueur);
+  tri.sort((a, b) => a.y - b.y);
+  for (const e of tri) {
+    if (e === joueur) drawJoueur(g);
+    else drawOrc(g, e);
+  }
+
+  // Haches
+  const sn = statsDe('haches');
+  if (sn) for (const n of jeu.haches) g.drawImage(SPR.hache, Math.round(n.x - 3), Math.round(n.y - 3));
+
+  // Projectiles
+  for (const p of jeu.projectiles) {
+    if (p.type === 'fleche') {
+      g.save();
+      g.translate(Math.round(p.x), Math.round(p.y));
+      g.rotate(p.angle);
+      g.drawImage(SPR.fleche, -Math.round(SPR.fleche.pw / 2), -Math.round(SPR.fleche.ph / 2));
+      g.restore();
+    } else {
+      g.drawImage(SPR.caillou, Math.round(p.x - 2), Math.round(p.y - 2));
+    }
+  }
+
+  for (const p of jeu.particules) {
+    g.globalAlpha = Math.max(0, Math.min(1, p.vie * 3));
+    g.fillStyle = p.c;
+    g.fillRect(Math.round(p.x), Math.round(p.y), p.s, p.s);
+  }
+  g.globalAlpha = 1;
+
+  for (const f of jeu.flotteurs) {
+    g.globalAlpha = Math.max(0, Math.min(1, f.vie * 1.5));
+    drawTextCentered(g, f.txt, f.x, f.y, 1, f.c);
+    g.globalAlpha = 1;
+  }
+
+  if (jeu.etat === 'jeu') { drawJoystick(g); drawBoutonDash(g); }
+  g.restore();
+
+  if (jeu.flash > 0) {
+    g.fillStyle = 'rgba(255,60,90,' + (jeu.flash * 0.45) + ')';
+    g.fillRect(0, 0, VW, VH);
+  }
+
+  if (jeu.etat === 'menu') drawMenu(g);
+  else if (jeu.etat === 'niveau') { drawHUD(g); drawNiveau(g); }
+  else if (jeu.etat === 'fin') { drawHUD(g); drawFin(g); }
+  else drawHUD(g);
+}
+
+/* ============================================================
+   14. BOUCLE
+   ============================================================ */
+
+let lastTime = 0;
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  if (!lastTime) { lastTime = now; return; }
+  let dt = (now - lastTime) / 1000;
+  lastTime = now;
+  dt = Math.min(dt, 1 / 30);
+
+  if (jeu.etat === 'jeu') update(dt);
+  else {
+    jeu.t += dt;
+    if (jeu.etat === 'menu') jeu.menuT += dt;
+    if (jeu.etat === 'fin') jeu.finCooldown = Math.max(0, jeu.finCooldown - dt);
+    for (let i = jeu.particules.length - 1; i >= 0; i--) {
+      const p = jeu.particules[i]; p.vie -= dt;
+      if (p.vie <= 0) jeu.particules.splice(i, 1);
+      else { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.94; p.vy *= 0.94; }
+    }
+  }
+  majRetour(jeu.etat === 'menu' || jeu.etat === 'fin');
+  render();
+}
+
+/* ============================================================
+   15. DÉMARRAGE
+   ============================================================ */
+buildSprites();
+resize();
+reset();
+jeu.etat = 'menu';
+loadBoard();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
