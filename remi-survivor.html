@@ -49,17 +49,31 @@
   }
   #retour.on{display:flex}
   #retour:active{transform:translate(1px,1px)}
+
+  #langues{
+    position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;z-index:30;
+    display:flex;gap:4px;
+  }
+  #langues button{
+    width:38px;height:38px;padding:0;border:2px solid rgba(253,251,245,.25);
+    background:rgba(11,9,16,.72);font-size:19px;line-height:1;cursor:pointer;
+    border-radius:0;display:flex;align-items:center;justify-content:center;
+  }
+  #langues button.actif{border-color:#ffd23f;background:rgba(255,210,63,.18)}
+  #langues button:active{transform:translate(1px,1px)}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <a id="retour" href="index.html">&lt; Rediaverse</a>
+<div id="langues"></div>
 <div id="nameBox">
   <p id="nameTitle">Tu entres dans le top 5</p>
   <p id="nameSub">Choisis ton pseudo</p>
   <input id="nameInput" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Pseudo">
   <button id="nameOk">Valider</button>
 </div>
+<script src="langues.js"></script>
 <script src="leaderboard.js"></script>
 <script>
 'use strict';
@@ -443,7 +457,7 @@ function buildSprites() {
 
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d', { alpha: false });
-let VW = CONFIG.WORLD_W, VH = 480, hudTop = 8, viewScale = 1;
+let VW = CONFIG.WORLD_W, VH = 480, hudTop = 8, viewScale = 1, pxScale = 1;
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
@@ -459,6 +473,7 @@ function resize() {
   canvas.height = VH * px;
   canvas.style.width = (VW * scale) + 'px';
   canvas.style.height = (VH * scale) + 'px';
+  pxScale = px;
   ctx.setTransform(px, 0, 0, px, 0, 0);
   ctx.imageSmoothingEnabled = false;
 
@@ -888,7 +903,7 @@ const jeu = {
   tues: 0,
   pouvoirs: {},
   orcs: [], projectiles: [], haches: [], effets: [], particules: [], flotteurs: [],
-  cartes: [], carteChoisie: null, boutonValider: null, synergieBanniere: null, volReserve: 0,
+  cartes: [], cartesCles: [], carteChoisie: null, boutonValider: null, synergieBanniere: null, volReserve: 0,
   secousse: 0, flash: 0, volCumul: 0, differes: [],
   minuteurs: {},
   attenteNom: false, monRang: -1, finCooldown: 0,
@@ -908,7 +923,7 @@ function reset() {
   jeu.manche = 1; jeu.tues = 0; jeu.banniere = 0;
   jeu.pouvoirs = {};
   jeu.orcs = []; jeu.projectiles = []; jeu.haches = []; jeu.effets = []; jeu.particules = []; jeu.flotteurs = [];
-  jeu.cartes = []; jeu.carteChoisie = null; jeu.boutonValider = null; jeu.synergieBanniere = null;
+  jeu.cartes = []; jeu.cartesCles = []; jeu.carteChoisie = null; jeu.boutonValider = null; jeu.synergieBanniere = null;
   jeu.secousse = 0; jeu.flash = 0; jeu.volCumul = 0; jeu.volReserve = 0; jeu.differes = [];
   jeu.minuteurs = {};
   jeu.attenteNom = false; jeu.monRang = -1; jeu.finCooldown = 0;
@@ -971,7 +986,7 @@ function placerOrc(x, y, genre) {
       dir: 1, anim: rnd(0, 6), flash: 0, peur: 0, immuPeur: 0, cdHache: {},
     });
     jeu.banniere = 0;
-    jeu.flotteurs.push({ x: VW / 2, y: VH * 0.36, txt: 'UN BALROG', vie: 2.4, c: '#ff6a2a' });
+    jeu.flotteurs.push({ x: VW / 2, y: VH * 0.36, txt: T('co_balrog'), vie: 2.4, c: '#ff6a2a' });
     jeu.secousse = 0.5;
     [110, 88, 66].forEach((f, i) => setTimeout(() => beep(f, 0.5, 'sawtooth', 0.13), i * 240));
     buzz([90, 70, 140]);
@@ -1141,7 +1156,13 @@ const nameBox = document.getElementById('nameBox');
 const nameInput = document.getElementById('nameInput');
 const nameOk = document.getElementById('nameOk');
 function cacherNom() { nameBox.classList.remove('on'); }
-function montrerNom() { nameBox.classList.add('on'); nameInput.value = ''; setTimeout(() => nameInput.focus(), 60); }
+function montrerNom() {
+  document.getElementById('nameTitle').textContent = T('entrerTop');
+  document.getElementById('nameSub').textContent = T('choisisPseudo');
+  nameOk.textContent = T('valider');
+  nameBox.classList.add('on'); nameInput.value = '';
+  setTimeout(() => nameInput.focus(), 60);
+}
 function nettoyerNom(raw) {
   const up = stripAccents(String(raw || '')).toUpperCase();
   return ([...up].filter(c => FONT[c] && c !== ' ').join('').slice(0, 10)) || 'ANONYME';
@@ -1160,6 +1181,24 @@ const retourEl = document.getElementById('retour');
 retourEl.addEventListener('pointerdown', e => e.stopPropagation());
 function majRetour(visible) { retourEl.classList.toggle('on', !!visible); }
 
+/* --- Sélecteur de langue --- */
+const zoneLangues = document.getElementById('langues');
+Langues.codes.forEach(code => {
+  const b = document.createElement('button');
+  b.textContent = Langues.drapeaux[code];
+  b.title = Langues.noms[code];
+  b.setAttribute('aria-label', Langues.noms[code]);
+  b.addEventListener('pointerdown', e => e.stopPropagation());
+  b.addEventListener('click', e => { e.stopPropagation(); Langues.definir(code); majDrapeaux(); });
+  zoneLangues.appendChild(b);
+});
+function majDrapeaux() {
+  [...zoneLangues.children].forEach((b, i) => b.classList.toggle('actif', Langues.codes[i] === Langues.code));
+}
+majDrapeaux();
+function majVisibiliteLangues(visible) { zoneLangues.style.display = visible ? 'flex' : 'none'; }
+
+
 
 async function finPartie() {
   jeu.etat = 'fin'; jeu.finCooldown = 0.8; jeu.monRang = -1;
@@ -1171,44 +1210,6 @@ async function finPartie() {
 /* ============================================================
    10. MONTÉE DE NIVEAU
    ============================================================ */
-
-function ouvrirNiveau() {
-  jeu.etat = 'niveau';
-  SFX.niveau();
-  const cles = tirerChoix();
-  const marge = 14, w = VW - marge * 2, h = 74, gap = 10;
-  const hBouton = 34, ecart = 14;
-  const total = cles.length * h + (cles.length - 1) * gap + ecart + hBouton;
-  const y0 = Math.round(Math.max(hudTop + HUD_H + 48, (VH - total) / 2 + 18));
-  jeu.cartes = cles.map((cle, i) => ({ cle, x: marge, y: y0 + i * (h + gap), w, h }));
-  jeu.carteChoisie = null;
-  const bas = y0 + cles.length * h + (cles.length - 1) * gap;
-  jeu.boutonValider = { x: marge, y: bas + ecart, w, h: hBouton };
-}
-
-function selectionnerCarte(cle) {
-  if (jeu.carteChoisie === cle) return;
-  jeu.carteChoisie = cle;
-  beep(660, 0.05, 'triangle', 0.07, 880);
-}
-
-function validerCarte() {
-  if (!jeu.carteChoisie) return;
-  const cle = jeu.carteChoisie;
-  SFX.choix();
-  appliquerPouvoir(cle);
-  jeu.cartes = [];
-  jeu.carteChoisie = null;
-  jeu.boutonValider = null;
-  if (jeu.xp >= jeu.xpNeed) {
-    jeu.xp -= jeu.xpNeed;
-    jeu.niveau++;
-    jeu.xpNeed = Math.round(CONFIG.XP_BASE * Math.pow(CONFIG.XP_CROISSANCE, jeu.niveau - 1));
-    ouvrirNiveau();
-  } else {
-    jeu.etat = 'jeu';
-  }
-}
 
 function gagnerXP(n) {
   jeu.xp += n;
@@ -1773,7 +1774,7 @@ function drawBoutonDash(g) {
   g.globalAlpha = 1;
 
   const col = pret ? '#7bd8c8' : 'rgba(255,255,255,0.35)';
-  drawTextCentered(g, 'ESQUIVE', b.x, b.y - 3, 1, col);
+  drawTextCentered(g, T('co_esquive'), b.x, b.y - 3, 1, col);
   if (!pret) drawTextCentered(g, joueur.dashCd.toFixed(1), b.x, b.y + 6, 1, 'rgba(255,255,255,0.35)');
 }
 
@@ -1807,8 +1808,8 @@ function drawHUD(g) {
   g.fillStyle = '#8fc45a'; g.fillRect(8, top + 11, Math.round(bw * xpp), 5);
 
   // Chiffres
-  drawText(g, 'NIV ' + jeu.niveau, 8, top + 20, 1, '#8fc45a');
-  const mid = 'MANCHE ' + jeu.manche;
+  drawText(g, T('niv').toUpperCase() + ' ' + jeu.niveau, 8, top + 20, 1, '#8fc45a');
+  const mid = T('co_manche') + ' ' + jeu.manche;
   drawText(g, mid, VW / 2 - textWidth(mid, 1) / 2, top + 20, 1, 'rgba(255,255,255,0.7)');
   const t = Math.floor(jeu.temps);
   const chrono = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0');
@@ -1821,7 +1822,7 @@ function drawHUD(g) {
   if (jeu.synergieBanniere) {
     const b = jeu.synergieBanniere;
     g.globalAlpha = Math.min(1, b.t / 0.5);
-    drawTextCentered(g, 'SYNERGIE', VW / 2, VH * 0.20, 1, '#b98fd6');
+    drawTextCentered(g, T('synergie'), VW / 2, VH * 0.20, 1, '#b98fd6');
     drawTextCentered(g, b.nom, VW / 2, VH * 0.20 + 9, 2, '#ffcf5c');
     g.globalAlpha = 1;
   }
@@ -1829,7 +1830,7 @@ function drawHUD(g) {
   if (jeu.banniere > 0) {
     const a = Math.min(1, jeu.banniere / 0.5);
     g.globalAlpha = a;
-    drawTextCentered(g, 'MANCHE ' + jeu.manche, VW / 2, VH * 0.30, 3, '#ffcf5c');
+    drawTextCentered(g, T('co_manche') + ' ' + jeu.manche, VW / 2, VH * 0.30, 3, '#ffcf5c');
     drawTextCentered(g, jeu.budget + ' ORCS', VW / 2, VH * 0.30 + 22, 1, '#fffdf6');
     g.globalAlpha = 1;
   }
@@ -1843,86 +1844,173 @@ function cadre(g, x, y, w, h, couleur) {
   g.fillRect(x, y + h - 1, w, 1); g.fillRect(x, y, 1, h); g.fillRect(x + w - 1, y, 1, h);
 }
 
-function drawNiveau(g) {
-  g.fillStyle = 'rgba(9,12,7,0.78)'; g.fillRect(0, 0, VW, VH);
+/* ============================================================
+   TEXTE NET — rendu à la résolution réelle de l'écran
+   La police 3x5 en pixels est illisible sur un téléphone pour des
+   phrases entières. Consignes et cartes de pouvoir sont donc tracées
+   avec une vraie police, à la résolution du device, pendant que le
+   reste du jeu garde son rendu pixel.
+   ============================================================ */
 
-  const y0 = jeu.cartes.length ? jeu.cartes[0].y : VH / 2;
-  drawTextCentered(g, 'NIVEAU ' + jeu.niveau, VW / 2, y0 - 40, 3, '#8fc45a');
-  const actives = synergiesActives();
-  if (actives.length) {
-    const t = 'Synergies : ' + actives.map(x => x.nom).join(', ');
-    wrapText(t, VW - 28).slice(0, 2).forEach((l, i) =>
-      drawTextCentered(g, l, VW / 2, y0 - 26 + i * 8, 1, '#b98fd6'));
-  } else {
-    drawTextCentered(g, 'choisis un pouvoir, puis valide', VW / 2, y0 - 18, 1, 'rgba(255,253,246,0.6)');
+const POLICE = '500 %dpx system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+
+function tailleTexte() { return Math.max(12, Math.round(VH * pxScale * 0.029)); }
+function hauteurLigne(taille) { return taille * 1.42 / pxScale; }
+
+function texteNet(g, str, xm, ym, taille, couleur, align) {
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.font = POLICE.replace('%d', taille);
+  g.textAlign = align || 'left';
+  g.textBaseline = 'top';
+  g.fillStyle = couleur;
+  g.fillText(str, Math.round(xm * pxScale), Math.round(ym * pxScale));
+  g.restore();
+}
+function largeurNet(g, str, taille) {
+  g.save();
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.font = POLICE.replace('%d', taille);
+  const w = g.measureText(str).width;
+  g.restore();
+  return w / pxScale;
+}
+function couperNet(g, str, maxMonde, taille) {
+  const mots = String(str).split(' ');
+  const lignes = [];
+  let cur = '';
+  for (const m of mots) {
+    const essai = cur ? cur + ' ' + m : m;
+    if (!cur || largeurNet(g, essai, taille) <= maxMonde) cur = essai;
+    else { lignes.push(cur); cur = m; }
   }
+  if (cur) lignes.push(cur);
+  return lignes;
+}
 
-  for (const c of jeu.cartes) {
+function dispositionCartes(g) {
+  // On dimensionne les cartes d'apres le texte, pas l'inverse
+  const marge = 12, larg = VW - marge * 2;
+  const hautDispo = VH - (hudTop + HUD_H) - 20;
+
+  for (let taille = Math.max(12, Math.round(VH * pxScale * 0.026)); ; taille -= 2) {
+    const hl = hauteurLigne(taille);
+    const petite = Math.round(taille * 0.78);
+    const hlp = hauteurLigne(petite);
+    const cartes = jeu.cartesCles.map(cle => {
+      const lignes = couperNet(g, POUVOIRS[cle].desc, larg - 20, taille);
+      return { cle, lignes, h: Math.round(hl + 4 + hlp + 6 + lignes.length * hl + 8 + 10) };
+    });
+    const gap = 10, hBouton = Math.round(hl * 2.1);
+    const corps = cartes.reduce((a, c) => a + c.h, 0) + (cartes.length - 1) * gap;
+    const entete = 26 + hl + 10;
+    const total = entete + corps + 14 + hBouton;
+    if (total <= hautDispo || taille <= 12) {
+      const y0 = Math.round(hudTop + HUD_H + Math.max(8, (hautDispo - total) / 2) + entete);
+      let y = y0;
+      for (const c of cartes) { c.x = marge; c.y = y; c.w = larg; y += c.h + gap; }
+      return { taille, petite, hl, hlp, marge, larg, cartes, entete, y0,
+               bouton: { x: marge, y: y + 4, w: larg, h: hBouton } };
+    }
+  }
+}
+
+function ouvrirNiveau() {
+  jeu.etat = 'niveau';
+  SFX.niveau();
+  jeu.cartesCles = tirerChoix();
+  jeu.carteChoisie = null;
+  const D = dispositionCartes(ctx);
+  jeu.cartes = D.cartes;
+  jeu.boutonValider = D.bouton;
+}
+
+function selectionnerCarte(cle) {
+  if (jeu.carteChoisie === cle) return;
+  jeu.carteChoisie = cle;
+  beep(660, 0.05, 'triangle', 0.07, 880);
+}
+
+function validerCarte() {
+  if (!jeu.carteChoisie) return;
+  const cle = jeu.carteChoisie;
+  SFX.choix();
+  appliquerPouvoir(cle);
+  jeu.cartes = []; jeu.cartesCles = []; jeu.carteChoisie = null; jeu.boutonValider = null;
+  if (jeu.xp >= jeu.xpNeed) {
+    jeu.xp -= jeu.xpNeed;
+    jeu.niveau++;
+    jeu.xpNeed = Math.round(CONFIG.XP_BASE * Math.pow(CONFIG.XP_CROISSANCE, jeu.niveau - 1));
+    ouvrirNiveau();
+  } else {
+    jeu.etat = 'jeu';
+  }
+}
+
+function drawNiveau(g) {
+  g.fillStyle = 'rgba(9,12,7,0.86)'; g.fillRect(0, 0, VW, VH);
+  const D = dispositionCartes(g);
+  jeu.cartes = D.cartes;
+  jeu.boutonValider = D.bouton;
+
+  drawTextCentered(g, T('niveau') + ' ' + jeu.niveau, VW / 2, D.y0 - D.entete + 2, 3, '#8fc45a');
+  const actives = synergiesActives();
+  const sousTitre = actives.length ? T('synergies') + ' : ' + actives.map(x => x.nom).join(', ') : T('choisisValide');
+  texteNet(g, sousTitre, VW / 2, D.y0 - D.hl - 8, D.petite, actives.length ? '#b98fd6' : 'rgba(255,253,246,0.6)', 'center');
+
+  for (const c of D.cartes) {
     const p = POUVOIRS[c.cle];
     const r = RARETES[p.rarete];
     const nv = niveauDe(c.cle);
     const prise = jeu.carteChoisie === c.cle;
 
-    if (prise) {
-      g.fillStyle = r.couleur;
-      g.fillRect(c.x - 3, c.y - 3, c.w + 6, c.h + 6);
-    }
+    if (prise) { g.fillStyle = r.couleur; g.fillRect(c.x - 3, c.y - 3, c.w + 6, c.h + 6); }
     cadre(g, c.x, c.y, c.w, c.h, r.couleur);
-    if (prise) {
-      g.fillStyle = 'rgba(255,255,255,0.07)';
-      g.fillRect(c.x, c.y, c.w, c.h);
-    }
+    if (prise) { g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(c.x, c.y, c.w, c.h); }
 
-    drawText(g, p.nom, c.x + 10, c.y + 10, 1, r.couleur);
-    const et = nv === 0 ? 'NOUVEAU' : 'NIV ' + nv + ' > ' + (nv + 1);
-    drawText(g, et, c.x + c.w - 10 - textWidth(et, 1), c.y + 10, 1, nv === 0 ? '#ffcf5c' : 'rgba(255,255,255,0.55)');
+    let y = c.y + 8;
+    texteNet(g, p.nom, c.x + 10, y, D.taille, r.couleur);
+    const etat = nv === 0 ? T('nouveau') : T('niv') + ' ' + nv + ' > ' + (nv + 1);
+    texteNet(g, etat, c.x + c.w - 10, y, D.petite, nv === 0 ? '#ffcf5c' : 'rgba(255,255,255,0.6)', 'right');
+    y += D.hl + 4;
+    texteNet(g, T('rarete_' + p.rarete), c.x + 10, y, D.petite, 'rgba(255,255,255,0.4)');
+    y += D.hlp + 6;
+    c.lignes.forEach((l, i) => texteNet(g, l, c.x + 10, y + i * D.hl, D.taille, '#fffdf6'));
 
-    drawText(g, r.nom, c.x + 10, c.y + 20, 1, 'rgba(255,255,255,0.35)');
-
-    const lignes = wrapText(p.desc, c.w - 20);
-    lignes.slice(0, 3).forEach((l, i) => drawText(g, l, c.x + 10, c.y + 34 + i * 8, 1, '#fffdf6'));
-
+    // Jauge de puissance
+    const by = c.y + c.h - 12;
     for (let i = 0; i < MAX_NIVEAU_POUVOIR; i++) {
-      const bx = c.x + 10 + i * 9, by = c.y + c.h - 12;
+      const larg = Math.floor((c.w - 20 - (MAX_NIVEAU_POUVOIR - 1) * 4) / MAX_NIVEAU_POUVOIR);
+      const bx = c.x + 10 + i * (larg + 4);
       g.fillStyle = i < nv ? r.couleur : (i === nv ? 'rgba(255,207,92,0.85)' : 'rgba(255,255,255,0.15)');
-      g.fillRect(bx, by, 7, 4);
-    }
-
-    if (prise) {
-      drawText(g, 'X', c.x + c.w - 16, c.y + c.h - 13, 1, r.couleur);
+      g.fillRect(bx, by, larg, 5);
     }
   }
 
-  // Bouton de validation, inerte tant qu'aucune carte n'est prise
-  const b = jeu.boutonValider;
-  if (b) {
-    const pret = !!jeu.carteChoisie;
-    g.fillStyle = 'rgba(9,12,7,0.9)'; g.fillRect(b.x + 3, b.y + 3, b.w, b.h);
-    g.fillStyle = pret ? '#8fc45a' : 'rgba(60,72,48,0.95)';
-    g.fillRect(b.x, b.y, b.w, b.h);
-    if (pret) {
-      g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(b.x, b.y, b.w, 2);
-    }
-    const txt = pret ? 'VALIDER' : 'CHOISIS UN POUVOIR';
-    const sc = pret ? 2 : 1;
-    drawTextCentered(g, txt, VW / 2, b.y + (b.h - 5 * sc) / 2, sc, pret ? '#18220f' : 'rgba(255,253,246,0.35)');
-  }
+  const b = D.bouton, pret = !!jeu.carteChoisie;
+  g.fillStyle = 'rgba(9,12,7,0.9)'; g.fillRect(b.x + 3, b.y + 3, b.w, b.h);
+  g.fillStyle = pret ? '#8fc45a' : 'rgba(60,72,48,0.95)';
+  g.fillRect(b.x, b.y, b.w, b.h);
+  if (pret) { g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(b.x, b.y, b.w, 2); }
+  texteNet(g, pret ? T('valider') : T('choisisPouvoir'), VW / 2,
+           b.y + (b.h - D.taille / pxScale) / 2, D.taille,
+           pret ? '#18220f' : 'rgba(255,253,246,0.4)', 'center');
 }
 
 const REGLES = [
-  { icon: 'remi',      texte: 'Remi defend actuellement la Comte contre les hordes du Mordor, aide le a triompher !' },
-  { icon: 'doigt',     texte: 'Fais glisser ton doigt n importe ou pour deplacer Remi' },
-  { icon: 'esquive',   texte: 'Le bouton en bas a droite declenche une esquive : utilise la a bon escient' },
-  { icon: 'orc',       texte: 'Tuer des orcs te permettra de devenir plus fort et de choisir des pouvoirs les plus devastateurs !' },
-  { icon: 'etincelle', texte: 'Certains pouvoirs synergisent entre eux : cree des combinaisons uniques !' },
+  { icon: 'remi',      cle: 'co_regle1' },
+  { icon: 'doigt',     cle: 'co_regle2' },
+  { icon: 'esquive',   cle: 'co_regle3' },
+  { icon: 'orc',       cle: 'co_regle4' },
+  { icon: 'etincelle', cle: 'co_regle5' },
 ];
 
 const H_ICONE = { remi: 22, doigt: 10, esquive: 5, orc: 16, etincelle: 7 };
-const LARG_ICONE = 24;
-const CPS = 85;   // caractères par seconde
+const LARG_ICONE = 26;
+const CPS = 30;   // caractères par seconde : assez lent pour être lu confortablement
 
 function dessinerIconeRegle(g, genre, x, y, h) {
-  const centre = spr => g.drawImage(spr, Math.round(x + (LARG_ICONE - spr.pw) / 2 - 4), Math.round(y + (h - spr.ph) / 2));
+  const centre = spr => g.drawImage(spr, Math.round(x + (LARG_ICONE - spr.pw) / 2 - 5), Math.round(y + (h - spr.ph) / 2));
   if (genre === 'remi') centre(SPR.remi.d[1]);
   else if (genre === 'orc') centre(SPR.orc.d[0]);
   else if (genre === 'doigt') centre(SPR.doigt);
@@ -1930,74 +2018,91 @@ function dessinerIconeRegle(g, genre, x, y, h) {
   else centre(SPR.etincelle);
 }
 
-function reglesMisesEnPage() {
-  const pw = VW - 20, PAD = 12;
-  const textW = pw - PAD * 2 - LARG_ICONE;
-  return REGLES.map(r => ({ icon: r.icon, lines: wrapText(r.texte, textW) }));
+function dispositionMenu(g) {
+  const marge = 10;
+  const dispo = VH - hudTop - 16;
+  const larg = VW - marge * 2;
+
+  // On réduit la police jusqu'à ce que tout tienne à l'écran
+  for (let taille = tailleTexte(); ; taille -= 2) {
+    const hl = hauteurLigne(taille);
+    const rows = REGLES.map(r => {
+      const lines = couperNet(g, T(r.cle), larg - LARG_ICONE - 8, taille);
+      return { icon: r.icon, lines, h: Math.max(H_ICONE[r.icon] + 10, lines.length * hl + 10) };
+    });
+    const cta = couperNet(g, T('co_cta'), larg - 8, taille);
+    const corps = rows.reduce((a, r) => a + r.h, 0);
+    const hTop = 16 + hl + 4 + Math.max(1, board.length) * hl + 10;
+    const total = 24 + 16 + corps + hTop + 16 + cta.length * hl;
+    if (total <= dispo || taille <= 11) {
+      return { taille, hl, marge, larg, rows, cta, total, hTop,
+               chars: rows.reduce((a, r) => a + r.lines.reduce((n, l) => n + l.length, 0), 0) };
+    }
+  }
 }
-const hauteurRegle = r => Math.max(16, H_ICONE[r.icon] + 4, r.lines.length * 7 + 6);
-const totalCaracteres = rows => rows.reduce((s, r) => s + r.lines.reduce((n, l) => n + l.length, 0), 0);
 
 function menuPret() {
-  return Math.floor(jeu.menuT * CPS) >= totalCaracteres(reglesMisesEnPage());
+  return Math.floor(jeu.menuT * CPS) >= dispositionMenu(ctx).chars;
 }
 
 function drawMenu(g) {
-  g.fillStyle = 'rgba(9,12,7,0.62)'; g.fillRect(0, 0, VW, VH);
+  const D = dispositionMenu(g);
+  g.fillStyle = 'rgba(9,12,7,0.92)';
+  g.fillRect(0, 0, VW, VH);
+  g.fillStyle = '#8fc45a'; g.fillRect(0, hudTop - 2, VW, 2);
 
-  const pw = VW - 20, PAD = 12;
-  const rows = reglesMisesEnPage();
-  const bodyH = rows.reduce((s, r) => s + hauteurRegle(r), 0);
-  const cta = wrapText('Appuie pour defendre la Comte', pw - PAD * 2);
-
-  const contentH = 20 + 14 + bodyH + 14 + cta.length * 7;
-  const ph = contentH + 26;
-  const px = Math.round(VW / 2 - pw / 2);
-  const py = Math.round(Math.max(hudTop, (VH - ph) / 2));
-
-  cadre(g, px, py, pw, ph, '#8fc45a');
-
-  let y = py + 15;
+  let y = Math.round(hudTop + Math.max(6, (VH - hudTop - D.total) / 2));
   drawTextCentered(g, 'LA COMTE', VW / 2, y, 4, '#8fc45a');
-  y += 20 + 14;
+  y += 24 + 16;
 
-  // Frappe progressive : la mise en page est figée, seul le texte se dévoile
   let reste = Math.floor(jeu.menuT * CPS);
-  const rx = px + PAD;
-  const curseur = Math.floor(jeu.t * 3) % 2 === 0;
+  const curseur = Math.floor(jeu.t * 2.2) % 2 === 0;
 
-  for (const r of rows) {
-    const h = hauteurRegle(r);
-    const total = r.lines.reduce((n, l) => n + l.length, 0);
+  for (const r of D.rows) {
     if (reste > 0) {
-      dessinerIconeRegle(g, r.icon, rx, y, h);
-      const ty = y + Math.round((h - (r.lines.length * 7 - 2)) / 2);
+      dessinerIconeRegle(g, r.icon, D.marge, y, r.h);
+      const ty = y + Math.round((r.h - r.lines.length * D.hl) / 2);
       let budget = reste;
       r.lines.forEach((ln, i) => {
         if (budget <= 0) return;
-        const morceau = ln.slice(0, budget);
-        drawText(g, morceau, rx + LARG_ICONE, ty + i * 7, 1, '#fffdf6');
+        const bout = ln.slice(0, budget);
+        texteNet(g, bout, D.marge + LARG_ICONE, ty + i * D.hl, D.taille, '#fffdf6');
         if (budget < ln.length && curseur) {
-          drawText(g, '.', rx + LARG_ICONE + textWidth(morceau, 1) + 2, ty + i * 7 + 1, 1, '#ffcf5c');
+          texteNet(g, '|', D.marge + LARG_ICONE + largeurNet(g, bout, D.taille) + 1, ty + i * D.hl, D.taille, '#ffcf5c');
         }
         budget -= ln.length;
       });
     }
-    reste -= total;
-    y += h;
+    reste -= r.lines.reduce((n, l) => n + l.length, 0);
+    y += r.h;
   }
 
-  y += 14;
+  // Classement, visible sans avoir à mourir
+  y += 16;
+  texteNet(g, T('meilleursScores'), D.marge, y, D.taille, '#ffcf5c');
+  const port = T(Classement.libelle() === 'monde' ? 'tousJoueurs' : 'cetAppareil');
+  texteNet(g, port, VW - D.marge, y, Math.round(D.taille * 0.8), 'rgba(255,255,255,0.35)', 'right');
+  y += D.hl + 4;
+  g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(D.marge, y - 3, VW - D.marge * 2, 1);
+  if (!board.length) {
+    texteNet(g, T(boardReady ? 'premierMarquer' : 'chargement'), D.marge, y, D.taille, 'rgba(255,255,255,0.4)');
+    y += D.hl;
+  } else {
+    board.forEach((e, i) => {
+      texteNet(g, (i + 1) + '.  ' + e.name, D.marge + 2, y + i * D.hl, D.taille, i === 0 ? '#ffcf5c' : 'rgba(255,253,246,0.85)');
+      texteNet(g, String(e.score), VW - D.marge - 2, y + i * D.hl, D.taille, i === 0 ? '#ffcf5c' : 'rgba(255,253,246,0.85)', 'right');
+    });
+    y += board.length * D.hl;
+  }
+
+  y += 16;
   if (menuPret()) {
     const pulse = 0.55 + 0.45 * Math.sin(jeu.t * 4);
     g.globalAlpha = pulse;
-    cta.forEach((l, i) => drawTextCentered(g, l, VW / 2, y + i * 7, 1, '#ffcf5c'));
+    D.cta.forEach((l, i) => texteNet(g, l, VW / 2, y + i * D.hl, D.taille, '#ffcf5c', 'center'));
     g.globalAlpha = 1;
-  }
-
-  if (board.length) {
-    const t = 'Record : ' + board[0].name + '  ' + board[0].score + ' orcs';
-    drawTextCentered(g, t, VW / 2, py + ph + 10, 1, 'rgba(255,207,92,0.7)');
+  } else {
+    texteNet(g, T('toutAfficher'), VW / 2, y, Math.round(D.taille * 0.85), 'rgba(255,255,255,0.35)', 'center');
   }
 }
 
@@ -2014,12 +2119,12 @@ function drawFin(g) {
   cadre(g, px, py, pw, ph, '#ff5069');
 
   let y = py + 15;
-  drawTextCentered(g, 'REMI EST TOMBE', VW / 2, y, 2, '#ff5069');
+  drawTextCentered(g, T('co_tombe'), VW / 2, y, 2, '#ff5069');
   y += 10 + 12;
-  drawTextCentered(g, jeu.tues + ' ORCS VAINCUS', VW / 2, y, 2, '#ffcf5c');
+  drawTextCentered(g, jeu.tues + ' ' + T('co_orcsTues'), VW / 2, y, 2, '#ffcf5c');
   y += 10 + 8;
   const t = Math.floor(jeu.temps);
-  drawTextCentered(g, Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') + '  -  NIVEAU ' + jeu.niveau + '  -  MANCHE ' + jeu.manche, VW / 2, y, 1, '#fffdf6');
+  drawTextCentered(g, Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0') + '  -  ' + T('niveau') + ' ' + jeu.niveau + '  -  ' + T('co_manche') + ' ' + jeu.manche, VW / 2, y, 1, '#fffdf6');
   y += 5 + 14;
 
   drawText(g, 'TOP 5', px + PAD, y, 1, '#8fc45a');
@@ -2046,11 +2151,11 @@ function drawFin(g) {
 
   y += 16;
   if (jeu.attenteNom) {
-    drawTextCentered(g, 'valide ton pseudo pour rejouer', VW / 2, y, 1, 'rgba(255,255,255,0.45)');
+    drawTextCentered(g, T('validePseudo'), VW / 2, y, 1, 'rgba(255,255,255,0.45)');
   } else if (jeu.finCooldown <= 0) {
     const pulse = 0.55 + 0.45 * Math.sin(jeu.t * 4);
     g.globalAlpha = pulse;
-    drawTextCentered(g, 'Appuie pour repartir', VW / 2, y, 1, '#8fc45a');
+    drawTextCentered(g, T('appuieRejouer'), VW / 2, y, 1, '#8fc45a');
     g.globalAlpha = 1;
   }
 }
@@ -2193,6 +2298,7 @@ function loop(now) {
     }
   }
   majRetour(jeu.etat === 'menu' || jeu.etat === 'fin');
+  majVisibiliteLangues(jeu.etat === 'menu' || jeu.etat === 'fin');
   render();
 }
 

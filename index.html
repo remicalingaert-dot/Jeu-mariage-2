@@ -96,37 +96,49 @@
     .planche{padding:7px;gap:9px}
     .infos{padding:12px 14px 16px;gap:8px}
   }
+
+  #langues{position:fixed;top:calc(var(--sat) + 8px);right:10px;z-index:30;display:flex;gap:5px}
+  #langues button{
+    width:40px;height:40px;padding:0;border:2px solid rgba(253,251,245,.25);
+    background:rgba(11,9,16,.75);font-size:20px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #langues button.actif{border-color:#ffd23f;background:rgba(255,210,63,.18)}
+  #langues button:active{transform:translate(1px,1px)}
 </style>
 </head>
 <body>
 
+<div id="langues"></div>
+
 <header>
   <canvas id="titre" aria-label="Le Rediaverse"></canvas>
-  <p class="accroche">Deux heros, deux mondes</p>
+  <p class="accroche" data-t="accroche"></p>
 </header>
 
 <main class="planche">
   <a class="case lidia" href="donut-run.html" data-num="1">
     <canvas class="vignette" id="vLidia" aria-hidden="true"></canvas>
     <div class="infos">
-      <p class="nom">Donut Run</p>
-      <p class="sous">Lidia court, saute et engloutit les donuts. Guepes et demarcheurs s en melent.</p>
-      <span class="bouton">Jouer</span>
+      <p class="nom" data-t="titreLidia">Donut Run</p>
+      <p class="sous" data-t="sousLidia"></p>
+      <span class="bouton" data-t="jouer"></span>
     </div>
   </a>
 
   <a class="case remi" href="remi-survivor.html" data-num="2">
     <canvas class="vignette" id="vRemi" aria-hidden="true"></canvas>
     <div class="infos">
-      <p class="nom">La Comte</p>
-      <p class="sous">Remi tient la Comte face aux orcs. Chaque niveau debloque un pouvoir.</p>
-      <span class="bouton">Jouer</span>
+      <p class="nom" data-t="titreRemi"></p>
+      <p class="sous" data-t="sousRemi"></p>
+      <span class="bouton" data-t="jouer"></span>
     </div>
   </a>
 </main>
 
 <footer>Hasard Studio</footer>
 
+<script src="langues.js"></script>
 <script>
 'use strict';
 
@@ -466,6 +478,23 @@ function dessinerRemi(g, t) {
 /* ============================================================
    Boucle
    ============================================================ */
+
+/* --- Langues --- */
+const zoneLangues = document.getElementById('langues');
+Langues.codes.forEach(code => {
+  const b = document.createElement('button');
+  b.textContent = Langues.drapeaux[code];
+  b.title = Langues.noms[code];
+  b.setAttribute('aria-label', Langues.noms[code]);
+  b.addEventListener('click', e => { e.preventDefault(); Langues.definir(code); appliquerLangue(); });
+  zoneLangues.appendChild(b);
+});
+function appliquerLangue() {
+  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = T(el.dataset.t); });
+  [...zoneLangues.children].forEach((b, i) => b.classList.toggle('actif', Langues.codes[i] === Langues.code));
+  document.documentElement.lang = Langues.code;
+}
+appliquerLangue();
 
 construire();
 const gL = prepare('vLidia');
