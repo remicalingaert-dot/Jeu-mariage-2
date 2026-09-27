@@ -4,7 +4,7 @@ Deux jeux mobiles en pixel art, sans dépendance ni build.
 
 | Fichier | Rôle |
 |---|---|
-| `index.html` | Page d'accueil, les deux cases de la planche |
+| `index_2.html` | Page d'accueil, les deux cases de la planche |
 | `donut-run.html` | Le jeu de Lidia, runner |
 | `remi-survivor_1.html` | Le jeu de Rémi, survivor |
 | `leaderboard.js` | Classement partagé, commun aux deux jeux |
