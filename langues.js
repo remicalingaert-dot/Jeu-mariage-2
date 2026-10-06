@@ -20,18 +20,18 @@ window.Langues = (function () {
   const TEXTES = {
 
     /* ---------- Page d'accueil ---------- */
-    accroche:      { fr: 'Deux heros, deux mondes',        en: 'Two heroes, two worlds',        es: 'Dos heroes, dos mundos' },
+    accroche:      { fr: 'Deux héros, deux mondes',        en: 'Two heroes, two worlds',        es: 'Dos heroes, dos mundos' },
     jouer:         { fr: 'Jouer',                          en: 'Play',                          es: 'Jugar' },
     titreLidia:    { fr: 'Donut Run',                      en: 'Donut Run',                     es: 'Donut Run' },
-    titreRemi:     { fr: 'La Comte',                       en: 'The Shire',                     es: 'La Comarca' },
+    titreRemi:     { fr: 'La Comté',                       en: 'The Shire',                     es: 'La Comarca' },
     sousLidia: {
-      fr: 'Lidia court, saute et engloutit les donuts. Guêpes et démarcheurs s\u2019en mêlent.',
-      en: 'Lidia runs, jumps and devours donuts. Wasps and street canvassers get in the way.',
-      es: 'Lidia corre, salta y devora donuts. Avispas y captadores se interponen.' },
+      fr: 'Lidia court après son plat préféré : les donuts ! Mais attention, guêpes et démarcheurs tentent de l\u2019en empêcher !',
+      en: 'Lidia is chasing her favourite treat: donuts! Watch out though, wasps and street canvassers are out to stop her!',
+      es: '¡Lidia persigue su manjar favorito: los donuts! Pero cuidado, avispas y captadores intentan impedírselo.' },
     sousRemi: {
-      fr: 'Rémi tient la Comté face aux orques. Chaque niveau débloque un pouvoir.',
-      en: 'Rémi holds the Shire against the orcs. Every level unlocks a power.',
-      es: 'Rémi defiende la Comarca de los orcos. Cada nivel desbloquea un poder.' },
+      fr: 'Rémi défend la Comté de l\u2019attaque des orcs en l\u2019absence de Frodon et Sam : aide-le !',
+      en: 'With Frodo and Sam away, Rémi defends the Shire from the orc attack. Lend him a hand!',
+      es: 'En ausencia de Frodo y Sam, Rémi defiende la Comarca del ataque de los orcos. ¡Ayúdale!' },
 
     /* ---------- Donut Run ---------- */
     dr_sousTitre: {
