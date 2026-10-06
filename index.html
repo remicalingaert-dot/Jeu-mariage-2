@@ -52,17 +52,19 @@
   .case.lidia{background:linear-gradient(180deg,#2a1b46 0%,#5b3a80 55%,#8f5f9b 100%)}
   .case.remi{background:linear-gradient(180deg,#7fb4e0 0%,#a8d18a 45%,#6d9c46 100%)}
 
-  .vignette{
+   .vignette{
     display:block;image-rendering:pixelated;image-rendering:crisp-edges;
-    width:100%;height:auto;flex:0 0 auto;
+    width:100%;height:auto;flex:0 0 auto;max-width:100%;
+    position:relative;z-index:1;
   }
   .case{justify-content:flex-start}
   .infos{
     flex:0 0 auto;width:100%;
     display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
     gap:5px;padding:6px 7px 9px;text-align:center;
-    background:linear-gradient(180deg,rgba(11,9,16,.55) 0%,rgba(11,9,16,.88) 55%,rgba(11,9,16,.92) 100%);
-    margin-top:-14px;
+    background:linear-gradient(180deg,rgba(11,9,16,.78) 0%,rgba(11,9,16,.92) 60%,rgba(11,9,16,.95) 100%);
+    position:relative;z-index:2;
+  
   }
   .nom{
     font-size:clamp(11px,3.4vw,17px);font-weight:700;letter-spacing:.06em;
@@ -216,7 +218,7 @@ function drawText(g, str, x, y, sc, col, sp = 1) {
 
 (function titre() {
   const TXT = 'LE REDIAVERSE';
-  const sc = 2, pad = 6, ombre = 3;
+  const sc = 4, pad = 10, ombre = 2;
   const cv = document.getElementById('titre');
   cv.width = textW(TXT, sc) + pad * 2 + ombre;
   cv.height = 5 * sc + pad * 2 + ombre;
